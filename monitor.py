@@ -11,7 +11,7 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-URL = 'https://ter.bt/portal/dashboard/trade/buy'
+URL = os.environ.get('TER_URL', 'https://ter.bt/portal/dashboard/trade/buy')
 LOG = logging.getLogger('ter-monitor')
 
 
@@ -103,13 +103,22 @@ def publish_status(price, threshold, state):
             raise RuntimeError('Dashboard update rejected')
 
 
+def session_init_script(session_storage):
+    # JSON encoding prevents session values from becoming executable JavaScript.
+    payload = json.dumps(session_storage)
+    return "const saved = " + payload + "; const values = saved[location.origin]; if(values) for(const [key,value] of Object.entries(values)) sessionStorage.setItem(key,value);"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--once', action='store_true', help='Read once and exit')
     parser.add_argument('--dry-run', action='store_true', help='Read price without sending or changing state')
+    parser.add_argument('--export-session', action='store_true', help='Export a logged-in session for a private cloud worker')
     parser.add_argument('--visible', action='store_true', help='Keep the monitor browser visible')
     parser.add_argument('--login', action='store_true', help='Open a visible browser for manual login; requires a desktop')
     args = parser.parse_args()
+    if args.export_session:
+        args.login = True
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     threshold = Decimal(os.environ.get('TER_THRESHOLD', '126'))
     interval = float(os.environ.get('TER_INTERVAL_SECONDS', '15'))
@@ -127,12 +136,29 @@ def main():
     from playwright.sync_api import sync_playwright
     # One process per profile: Chromium also locks persistent profiles.
     with sync_playwright() as p:
-        browser = p.chromium.launch_persistent_context(str(runtime / 'browser'), headless=not (args.login or args.visible))
+        engine = None
+        session_json = os.environ.get('TER_BROWSER_SESSION_JSON')
+        if session_json and not args.login:
+            session = json.loads(session_json)
+            engine = p.chromium.launch(headless=not args.visible)
+            browser = engine.new_context(storage_state=session['storage'])
+            browser.add_init_script(script=session_init_script(session.get('session_storage', {})))
+        else:
+            browser = p.chromium.launch_persistent_context(str(runtime / 'browser'), headless=not (args.login or args.visible))
         page = browser.pages[0] if browser.pages else browser.new_page()
         try:
             if args.login:
                 page.goto(URL, wait_until='domcontentloaded', timeout=60000)
                 input('Complete login manually, then press Enter here to save the session: ')
+                if args.export_session:
+                    session = {'storage': browser.storage_state(), 'session_storage': {}}
+                    for tab in browser.pages:
+                        if tab.url.startswith('https://ter.bt/'):
+                            session['session_storage']['https://ter.bt'] = tab.evaluate('Object.assign({}, sessionStorage)')
+                    output = runtime / 'cloud-session.json'
+                    output.write_text(json.dumps(session))
+                    os.chmod(output, 0o600)
+                    LOG.info('Private session saved to %s. Treat it like your password; never commit or share it.', output)
                 return
             while True:
                 try:
@@ -162,6 +188,8 @@ def main():
                 time.sleep(interval)
         finally:
             browser.close()
+            if engine is not None:
+                engine.close()
 
 
 if __name__ == '__main__':

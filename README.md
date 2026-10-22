@@ -1,5 +1,7 @@
 # TER WhatsApp price monitor
 
+**To run while your PC is off, follow [CLOUD.md](CLOUD.md) for a persistent Railway worker.** Vercel is only the optional dashboard. Sessions can expire and require a fresh manual OTP login.
+
 For Windows and the Vercel website, follow [DEPLOY.md](DEPLOY.md). The default target is now strictly below Nu. 126. The Vercel dashboard and Windows setup are implemented but not live-validated.
 
 Monitors the TER **buy price** at https://ter.bt/portal/dashboard/trade/buy and requests a WhatsApp alert through Twilio when it is **strictly below 126**. Checks every 15 seconds by default. No AI or trading permission is needed. This program never buys or sells.
