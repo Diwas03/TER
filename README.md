@@ -1,5 +1,7 @@
 # TER WhatsApp price monitor
 
+**To run checks in this GitHub repository without your PC, follow [GITHUB_ACTIONS.md](GITHUB_ACTIONS.md).** This checks approximately every five minutes, can be delayed, and requires private session/WhatsApp configuration. Scheduled checks are disabled until enabled in repository settings. This is an alternative to the continuous 15-second cloud worker.
+
 **To run while your PC is off, follow [CLOUD.md](CLOUD.md) for a persistent Railway worker.** Vercel is only the optional dashboard. Sessions can expire and require a fresh manual OTP login.
 
 For Windows and the Vercel website, follow [DEPLOY.md](DEPLOY.md). The default target is now strictly below Nu. 126. The Vercel dashboard and Windows setup are implemented but not live-validated.

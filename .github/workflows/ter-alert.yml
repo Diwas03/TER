@@ -1,0 +1,67 @@
+name: TER price alert
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Read the buy price without sending WhatsApp or changing state
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ter-price-monitor
+  cancel-in-progress: false
+
+jobs:
+  check-price:
+    if: github.event_name == 'workflow_dispatch' || vars.MONITOR_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.55.0-noble
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      TER_RUNTIME_DIR: .runtime
+      TER_BROWSER_SESSION_JSON: ${{ secrets.TER_BROWSER_SESSION_JSON }}
+      TER_PRICE_SELECTOR: ${{ vars.TER_PRICE_SELECTOR }}
+      TER_URL: ${{ vars.TER_URL || 'https://ter.bt/portal/dashboard/trade/buy' }}
+      TER_THRESHOLD: '126'
+      TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+      TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+      TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
+      TWILIO_WHATSAPP_TO: ${{ secrets.TWILIO_WHATSAPP_TO }}
+      TWILIO_CONTENT_SID: ${{ secrets.TWILIO_CONTENT_SID }}
+      DASHBOARD_URL: ${{ vars.DASHBOARD_URL }}
+      MONITOR_API_TOKEN: ${{ secrets.MONITOR_API_TOKEN }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python dependencies
+        run: python3 -m pip install --no-cache-dir -r requirements.txt
+      - name: Check session is configured without printing it
+        run: python3 -c "from monitor import required; required('TER_BROWSER_SESSION_JSON'); required('TER_PRICE_SELECTOR')"
+      - name: Restore alert suppression state only
+        uses: actions/cache/restore@v4
+        with:
+          path: .runtime/state.json
+          key: ter-state-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ter-state-v1-
+      - name: Check TER buy price
+        shell: bash
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            python3 monitor.py --once --dry-run
+          else
+            python3 monitor.py --once
+          fi
+      - name: Save alert suppression state only
+        if: success() && env.DRY_RUN != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .runtime/state.json
+          key: ter-state-v1-${{ github.run_id }}-${{ github.run_attempt }}
