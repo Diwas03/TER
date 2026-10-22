@@ -4,11 +4,34 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 from urllib.error import HTTPError
 import monitor
 
 
 class MonitorTests(unittest.TestCase):
+    def test_page_response_diagnostics(self):
+        for status in (200, 204):
+            monitor.check_page_response(SimpleNamespace(status=status, ok=True))
+        for status, hint in ((401, 'authentication'), (403, 'refused'),
+                             (404, 'TER_URL'), (429, 'rate-limiting'), (503, 'unavailable')):
+            with self.subTest(status=status):
+                with self.assertRaises(monitor.PageCheckError) as caught:
+                    monitor.check_page_response(SimpleNamespace(status=status, ok=False))
+                self.assertIn(f'HTTP {status}', str(caught.exception))
+                self.assertIn(hint, str(caught.exception))
+        with self.assertRaisesRegex(monitor.PageCheckError, 'no HTTP response'):
+            monitor.check_page_response(None)
+
+    def test_logs_safe_status_but_not_private_exception_details(self):
+        with self.assertLogs('ter-monitor', level='ERROR') as logs:
+            monitor.log_check_failure(monitor.PageCheckError('TER returned HTTP 403.'))
+        self.assertIn('HTTP 403', logs.output[0])
+        for exc in (RuntimeError('private-session-value'), TimeoutError('private-session-value')):
+            with self.assertLogs('ter-monitor', level='ERROR') as logs:
+                monitor.log_check_failure(exc)
+            self.assertNotIn('private-session-value', ''.join(logs.output))
+
     def test_parse_price(self):
         for text, expected in [('125', '125'), ('BTN 124.50', '124.50'), ('Nu. 125', '125'), ('1,250.00', '1250.00')]:
             self.assertEqual(monitor.parse_price(text), Decimal(expected))

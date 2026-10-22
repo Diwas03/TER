@@ -56,3 +56,16 @@ Optionally configure `DASHBOARD_URL` as a repository variable and `MONITOR_API_T
 - These checks can miss price changes between observations, stop when usage limits are reached, or fail during outages. No separate login-expiry notification is implemented.
 
 See `.github/workflows/ter-alert.yml` for the complete configuration. It runs no trading operations.
+
+## Troubleshoot a failed page load
+
+A missing cache is normal on the first run. Dependency-install warnings are not a failed price check. The price-reading step now logs `TER page response: HTTP ...` without private URLs, cookies, session data, or response bodies.
+
+- HTTP 401: check or renew the login session.
+- HTTP 403: TER refused the request. This could be the URL, session restrictions, or cloud-runner access policy; the status does not establish which. Do not change fingerprints or bypass site protections.
+- HTTP 404: correct `TER_URL` using the exact logged-in page address.
+- HTTP 429: pause automatic checks and allow the rate limit to recover.
+- HTTP 5xx: the site or its gateway failed; retry after it recovers.
+- HTTP 200 followed by a timeout: check whether the session opens the login page instead of prices, then verify the price selector.
+
+After a code update, start a **new Run workflow** on `main` with `dry_run` checked. Rerunning an old failed job can reuse its old commit and old diagnostics. Share only the status/error lines, not private session contents.

@@ -15,6 +15,37 @@ URL = os.environ.get('TER_URL', 'https://ter.bt/portal/dashboard/trade/buy')
 LOG = logging.getLogger('ter-monitor')
 
 
+class PageCheckError(RuntimeError):
+    """Only controlled diagnostic messages belong in this exception."""
+
+
+def check_page_response(response):
+    if response is None:
+        raise PageCheckError('TER navigation returned no HTTP response. Verify TER_URL.')
+    status = int(response.status)
+    LOG.info('TER page response: HTTP %d', status)
+    if response.ok:
+        return
+    hints = {
+        401: 'TER requires authentication. Renew the private login session and test again.',
+        403: 'TER refused this request. Verify TER_URL and session validity; the site may restrict cloud runners. This status alone does not identify the cause.',
+        404: 'The saved TER_URL was not found. Copy the exact address of the live price page.',
+        429: 'TER is rate-limiting requests. Pause scheduled runs and retry later.',
+    }
+    hint = hints.get(status, 'The TER page could not be loaded. Verify TER_URL and try later if the site is unavailable.')
+    raise PageCheckError(f'TER returned HTTP {status}. {hint}')
+
+
+def log_check_failure(exc):
+    if isinstance(exc, PageCheckError):
+        LOG.error('Check failed: %s No alert sent.', exc)
+    elif type(exc).__name__ == 'TimeoutError':
+        LOG.error('Check timed out. Check TER availability, login expiry, and TER_PRICE_SELECTOR. No alert sent.')
+    else:
+        # Other exception messages can contain private URLs or request details.
+        LOG.error('Check failed (%s); no successful alert recorded', type(exc).__name__)
+
+
 def parse_price(text):
     # Require one unambiguous amount; reject bid/ask lists and malformed grouping.
     cleaned = re.sub(r'\b(?:BTN|TER)\b|\bNu\.?', '', text, flags=re.I).strip()
@@ -163,8 +194,7 @@ def main():
             while True:
                 try:
                     response = page.goto(URL, wait_until='domcontentloaded', timeout=60000)
-                    if response is None or not response.ok:
-                        raise RuntimeError('TER page request failed')
+                    check_page_response(response)
                     field = page.locator(selector)
                     field.wait_for(state='visible', timeout=30000)
                     if field.count() != 1:
@@ -180,7 +210,7 @@ def main():
                             LOG.warning('Dashboard update failed (%s); monitoring continues', type(exc).__name__)
                 except Exception as exc:
                     # Never log request headers, credential values, or remote response bodies.
-                    LOG.error('Check failed (%s); no successful alert recorded', type(exc).__name__)
+                    log_check_failure(exc)
                     if args.once:
                         raise SystemExit(1) from None
                 if args.once:
