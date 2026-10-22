@@ -169,7 +169,7 @@ def main():
                     field.wait_for(state='visible', timeout=30000)
                     if field.count() != 1:
                         raise ValueError('TER_PRICE_SELECTOR must identify exactly one buy-price field')
-                    price = parse_price(field.inner_text(timeout=10000))
+                    price = parse_price(field.text_content(timeout=10000) or '')
                     LOG.info('Observed TER buy price: %s; target: %s', price, threshold)
                     if not args.dry_run:
                         state = process_price(price, threshold, load_state(state_path), send_whatsapp)
