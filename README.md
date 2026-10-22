@@ -61,3 +61,7 @@ Keep one instance running on an always-on host under a process supervisor for co
 The first observed price below the threshold triggers an alert. Further low readings are suppressed until a successful reading at or above 126 rearms the monitor. `.runtime/state.json` preserves this state across restarts. Failed readings do not rearm it. Failed notification submissions are retried on later polls. A network timeout after Twilio accepts a message, or a crash before state is saved, can cause a duplicate; delivery is not exactly-once. Changing the threshold requires reviewing/removing prior alert state while stopped.
 
 TLS verification remains enabled. Logs omit credentials and remote error bodies. On a failed check, use the error type, TER login status, and Twilio console to diagnose the cause. The system depends on TER page availability and may miss short price movements between polls. A changed page selector or stale quote may require maintenance.
+
+## Alternative to Railway
+
+Use a paid Render Background Worker with the included `render.yaml`. See [RENDER.md](RENDER.md) for deployment and private session configuration. It has not been live-tested on Render.

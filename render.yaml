@@ -1,0 +1,33 @@
+services:
+  - type: worker
+    name: ter-price-monitor
+    runtime: docker
+    plan: standard
+    numInstances: 1
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    disk:
+      name: ter-monitor-state
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: TER_THRESHOLD
+        value: "126"
+      - key: TER_INTERVAL_SECONDS
+        value: "15"
+      - key: TER_BROWSER_SESSION_JSON
+        sync: false
+      - key: TER_URL
+        value: https://ter.bt/portal/dashboard/trade/buy
+      - key: TER_PRICE_SELECTOR
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+      - key: TWILIO_WHATSAPP_TO
+        sync: false
+      - key: TWILIO_CONTENT_SID
+        sync: false

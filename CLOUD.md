@@ -55,3 +55,7 @@ You do not need your PC on during normal cloud monitoring. **If TER expires the 
 The session export is a startup seed, not a guarantee of indefinite refresh. Browser memory can refresh credentials during a run, but those refreshes are not saved back to the host variable. A restart may need a new export.
 
 The alert triggers on an observed buy price **strictly below Nu. 126**, including the first reading if already below it. A value equal to 126 does not alert. It rearms at or above 126. The page reports indicative prices, not guaranteed executable trade prices. There is no automatic trading.
+
+## Alternative to Railway
+
+Use a paid Render Background Worker with the included `render.yaml`. See [RENDER.md](RENDER.md) for deployment and private session configuration. It has not been live-tested on Render.
