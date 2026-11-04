@@ -1,7 +1,16 @@
-import { parseQuote } from './quote.mjs';
+import { fetchQuote } from './fetch-quote.mjs';
 import { sendPriceAlerts } from './push.ts';
 
 Deno.serve(async (request: Request) => {
+  if (request.method === 'GET' && new URL(request.url).pathname.endsWith('/quote')) {
+    const headers = {'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store, max-age=0'};
+    try {
+      // Fixed public upstream only; no login, writes, push sends or collector secret.
+      return Response.json({quote: await fetchQuote()}, {headers});
+    } catch {
+      return Response.json({error: 'Current TER quote unavailable'}, {status: 502, headers});
+    }
+  }
   if (request.method === 'GET') return Response.json({publicKey: Deno.env.get('VAPID_PUBLIC_KEY') || null}, {headers: {'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'}});
   if (request.method !== 'POST') return new Response('Method not allowed', {status: 405});
   const secret = Deno.env.get('COLLECTOR_SECRET');
@@ -14,9 +23,7 @@ Deno.serve(async (request: Request) => {
   for (let i = 0; i < actual.length; i++) difference |= actual[i] ^ expected[i];
   if (difference !== 0) return new Response('Unauthorized', {status: 401});
   try {
-    const api = await fetch('https://api.ter.bt/prices', {headers: {Accept: 'application/json'}, signal: AbortSignal.timeout(10000)});
-    if (!api.ok) throw new Error('TER request failed');
-    const quote = parseQuote(await api.json());
+    const quote = await fetchQuote();
     const url = Deno.env.get('SUPABASE_URL');
     const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
     if (!url || !key) throw new Error('Missing database configuration');
