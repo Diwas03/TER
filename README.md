@@ -1,5 +1,7 @@
 # TER WhatsApp price monitor
 
+**New: installable GitHub Pages PWA with Supabase price history. See [PWA.md](PWA.md) for setup.**
+
 **To run checks in this GitHub repository without your PC, follow [GITHUB_ACTIONS.md](GITHUB_ACTIONS.md).** This checks approximately every five minutes, can be delayed, and requires private session/WhatsApp configuration. Scheduled checks are disabled until enabled in repository settings. This is an alternative to the continuous 15-second cloud worker.
 
 **To run while your PC is off, follow [CLOUD.md](CLOUD.md) for a persistent Railway worker.** Vercel is only the optional dashboard. Sessions can expire and require a fresh manual OTP login.

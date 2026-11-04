@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import time
 from decimal import Decimal, InvalidOperation
+from datetime import datetime, timezone
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -134,6 +135,23 @@ def publish_status(price, threshold, state):
             raise RuntimeError('Dashboard update rejected')
 
 
+def publish_history(price, observed_at):
+    """Write only public price data; the privileged key stays on the worker."""
+    endpoint = os.environ.get('SUPABASE_URL', '').rstrip('/')
+    if not endpoint:
+        return
+    if not re.fullmatch(r'https://[a-z0-9-]+\.supabase\.co', endpoint):
+        raise ValueError('SUPABASE_URL must be a hosted Supabase HTTPS project URL')
+    key = required('SUPABASE_SERVICE_ROLE_KEY')
+    request = Request(endpoint + '/rest/v1/price_observations',
+        data=json.dumps({'price': str(price), 'observed_at': observed_at}).encode(),
+        headers={'apikey': key, 'Authorization': 'Bearer ' + key,
+                 'Content-Type': 'application/json', 'Prefer': 'return=minimal'}, method='POST')
+    with urlopen(request, timeout=15) as response:
+        if response.status != 201:
+            raise RuntimeError('Price history write rejected')
+
+
 def session_init_script(session_storage):
     # JSON encoding prevents session values from becoming executable JavaScript.
     payload = json.dumps(session_storage)
@@ -142,6 +160,7 @@ def session_init_script(session_storage):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--no-alerts', action='store_true', help='Collect prices without WhatsApp alerts')
     parser.add_argument('--once', action='store_true', help='Read once and exit')
     parser.add_argument('--dry-run', action='store_true', help='Read price without sending or changing state')
     parser.add_argument('--export-session', action='store_true', help='Export a logged-in session for a private cloud worker')
@@ -161,7 +180,7 @@ def main():
     runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
     state_path = runtime / 'state.json'
     selector = '' if args.login else required('TER_PRICE_SELECTOR')
-    if not args.dry_run and not args.login:
+    if not args.dry_run and not args.login and not args.no_alerts:
         for name in ('TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_WHATSAPP_FROM', 'TWILIO_WHATSAPP_TO'):
             required(name)
     from playwright.sync_api import sync_playwright
@@ -202,8 +221,18 @@ def main():
                     price = parse_price(field.text_content(timeout=10000) or '')
                     LOG.info('Observed TER buy price: %s; target: %s', price, threshold)
                     if not args.dry_run:
-                        state = process_price(price, threshold, load_state(state_path), send_whatsapp)
-                        save_state(state_path, state)
+                        observed_at = datetime.now(timezone.utc).isoformat()
+                        try:
+                            publish_history(price, observed_at)
+                        except Exception as exc:
+                            LOG.warning('History write failed (%s); observation not stored', type(exc).__name__)
+                            if args.once:
+                                raise
+                        if args.no_alerts:
+                            state = load_state(state_path)
+                        else:
+                            state = process_price(price, threshold, load_state(state_path), send_whatsapp)
+                            save_state(state_path, state)
                         try:
                             publish_status(price, threshold, state)
                         except Exception as exc:
