@@ -1,0 +1,14 @@
+import {cpSync,mkdirSync,writeFileSync,readFileSync,existsSync} from 'node:fs';
+import {resolve} from 'node:path';
+import vm from 'node:vm';
+const context={atob};vm.createContext(context);vm.runInContext(readFileSync('pwa/public-config.js','utf8'),context);
+const configured={};vm.createContext(configured);configured.window={};vm.runInContext(readFileSync('pwa/config.js','utf8'),configured);
+const defaults=configured.window.TER_CONFIG;
+const config={...defaults,url:(process.env.VITE_SUPABASE_URL||process.env.SUPABASE_URL||defaults.url).trim().replace(/\/$/,''),anonKey:(process.env.VITE_SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_ANON_KEY||process.env.SUPABASE_ANON_KEY||defaults.anonKey||'').trim()};
+if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(config.url))throw Error('Public Supabase URL must be a hosted HTTPS project URL');
+if(config.anonKey&&!context.TERPublicConfig.isPublicKey(config.anonKey))throw Error('Use a public publishable or legacy anon key, never a privileged key');
+const destination=resolve(process.argv[2]||'dist-pages');
+if(existsSync(destination))throw Error('Output directory already exists; choose a fresh directory');
+mkdirSync(destination,{recursive:true});cpSync('pwa',destination,{recursive:true});
+writeFileSync(resolve(destination,'config.js'),'// Public connection defaults generated for Pages.\nwindow.TER_CONFIG = '+JSON.stringify(config)+';\n');
+console.log(config.anonKey?'Pages prepared with public project settings.':'Pages prepared. No public key configured; users can enter it in Connection settings.');

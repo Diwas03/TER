@@ -1,8 +1,6 @@
 name: TER price alert
 
 on:
-  schedule:
-    - cron: '*/5 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:
@@ -19,16 +17,10 @@ concurrency:
 
 jobs:
   check-price:
-    if: github.event_name == 'workflow_dispatch' || vars.MONITOR_ENABLED == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
-    container:
-      image: mcr.microsoft.com/playwright/python:v1.55.0-noble
     env:
-      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
       TER_RUNTIME_DIR: .runtime
-      TER_BROWSER_SESSION_JSON: ${{ secrets.TER_BROWSER_SESSION_JSON }}
-      TER_PRICE_SELECTOR: ${{ vars.TER_PRICE_SELECTOR }}
       TER_URL: ${{ vars.TER_URL || 'https://ter.bt/portal/dashboard/trade/buy' }}
       SUPABASE_URL: ${{ vars.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -42,9 +34,7 @@ jobs:
       MONITOR_API_TOKEN: ${{ secrets.MONITOR_API_TOKEN }}
       DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Install Python dependencies
-        run: python3 -m pip install --no-cache-dir -r requirements.txt
+      - uses: actions/checkout@v5
       - name: Restore alert suppression state only
         uses: actions/cache/restore@v4
         with:

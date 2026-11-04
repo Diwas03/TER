@@ -10,7 +10,7 @@
      try{socket=new WebSocket(config.url.replace(/^https:/,'wss:')+'/realtime/v1/websocket?apikey='+encodeURIComponent(config.anonKey)+'&vsn=1.0.0');}
      catch{reconnect();return;}
      socket.onopen=()=>{
-       send('phx_join',{config:{broadcast:{self:false},presence:{key:''},postgres_changes:[{event:'INSERT',schema:'public',table:'price_observations'}],private:false},access_token:config.anonKey});
+       send('phx_join',{config:{broadcast:{self:false},presence:{key:''},postgres_changes:[{event:'INSERT',schema:'public',table:'price_observations'}],private:false},...(config.anonKey.startsWith('sb_publishable_')?{}:{access_token:config.anonKey})});
        heartbeat=setInterval(()=>send('heartbeat',{},'phoenix'),25000);
      };
      socket.onmessage=event=>{

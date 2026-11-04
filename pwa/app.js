@@ -6,10 +6,9 @@ let quoteSide = 'buy', historySnapshot = null, historyLoadedAt = 0, stopRealtime
 let days = 1, generation = 0, busy = false, controller, latest = null, cached = false;
 const money = value => 'Nu. ' + Number(value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4});
 function validConfig(c) {
-  if (!c || !/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(c.url)) throw Error('Add your Supabase project in Connection settings.');
-  try { const claims = JSON.parse(atob(c.anonKey.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); if (claims.role !== 'anon') throw Error(); }
-  catch { throw Error('Use only the public legacy anon key from Supabase API settings.'); }
+  if(!TERPublicConfig.valid(c))throw Error('Save your Supabase URL and public publishable or legacy anon key in Connection settings.');
 }
+
 function health() {
   if (!latest) return;
   const age = (Date.now() - Date.parse(latest.observed_at)) / 1000;
@@ -91,7 +90,7 @@ async function refresh() {
   const cacheKey='ter-prices:'+c.url+':'+quoteSide+':'+range;
   const old=read(cacheKey);if(old&&!latest)render(old,true);
   async function api(path, options={}) {
-    const r=await fetch(c.url+'/rest/v1/'+path,{...options,headers:{apikey:c.anonKey,Authorization:'Bearer '+c.anonKey,'Content-Type':'application/json'},signal:controller.signal,cache:'no-store'});
+    const r=await fetch(c.url+'/rest/v1/'+path,{...options,headers:TERPublicConfig.headers(c),signal:controller.signal,cache:'no-store'});
     if(!r.ok)throw Error('Price service unavailable ('+r.status+'). Check project settings and SQL setup.');return r.json();
   }
   try {

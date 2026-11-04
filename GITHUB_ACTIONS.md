@@ -1,3 +1,5 @@
+> Current setup: continuous collection runs in Supabase. The legacy GitHub monitor workflow is now manual-only to avoid redundant scheduled jobs and Actions usage. Scheduled instructions below describe the older alternative; use DEPLOYMENT.md and DASHBOARD_UPGRADE.md for the current system.
+
 # Run TER checks inside this GitHub repository
 
 This option uses GitHub Actions, without Railway, Render, or an always-on PC. It is a **scheduled one-time check about every five minutes**, not the 15-second continuous monitor. GitHub can delay or drop scheduled runs, so short price dips can be missed. No hosting account is required, but GitHub Actions/cache quotas and account policies apply; check billing and keep paid overages disabled if you need zero spending. Private repositories have limited included runner minutes. WhatsApp through Twilio may still incur fees.

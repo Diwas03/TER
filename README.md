@@ -1,5 +1,7 @@
 # TER WhatsApp price monitor
 
+**Deployment troubleshooting and public key configuration: [DEPLOYMENT.md](DEPLOYMENT.md). The legacy Actions monitor is now manual-only; Supabase handles scheduled collection.**
+
 **Dashboard redesign and 15-second collection: activate [DASHBOARD_UPGRADE.md](DASHBOARD_UPGRADE.md).**
 
 **Buy/sell quotes and phone push alerts: activate the upgrade using [PUSH_SETUP.md](PUSH_SETUP.md).**
