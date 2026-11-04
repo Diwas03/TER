@@ -1,5 +1,7 @@
 # TER WhatsApp price monitor
 
+**Buy/sell quotes and phone push alerts: activate the upgrade using [PUSH_SETUP.md](PUSH_SETUP.md).**
+
 **No Railway needed: follow [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for scheduled Supabase collection and the phone PWA.**
 
 **Current collector: public TER price API, no login/OTP/browser required. See [PWA.md](PWA.md) for current Railway and Supabase steps. Older browser instructions below apply only with `--source browser`.**

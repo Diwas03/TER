@@ -49,6 +49,7 @@ function renderHistory(points) {
 function render(data, fromCache) {
   latest = data.latest; cached = fromCache;
   el('price').textContent = latest ? money(latest.price) : '—';
+  el('sell-price').textContent = latest && Number(latest.sell_price) > 0 ? money(latest.sell_price) : '—';
   el('seen').textContent = latest ? 'Observed: '+new Date(latest.observed_at).toLocaleString() : 'No observation available';
   if (!latest) { el('health').textContent='Waiting for collector';el('freshness').textContent='No prices have been recorded yet.'; }
   renderHistory(data.history);health();
@@ -65,9 +66,9 @@ async function refresh() {
     if(!r.ok)throw Error('Price service unavailable ('+r.status+'). Check project settings and SQL setup.');return r.json();
   }
   try {
-    const [quotes,history]=await Promise.all([api('price_observations?select=price,observed_at&order=observed_at.desc&limit=1'),api('rpc/price_history',{method:'POST',body:JSON.stringify({range_days:range})})]);
+    const [quotes,history]=await Promise.all([api('price_observations?select=*&order=observed_at.desc&limit=1'),api('rpc/price_history',{method:'POST',body:JSON.stringify({range_days:range})})]);
     if(version!==generation)return;
-    const data={latest:quotes[0]||null,history};render(data,false);write(cacheKey,data);el('message').textContent='';
+    const data={latest:quotes[0]||null,history};render(data,false);write(cacheKey,data);el('message').textContent='';checkAlerts(data.latest);
   } catch(e) {if(version!==generation)return;cached=true;health();el('health').textContent=latest?'Cached · not live':'Unavailable';el('message').textContent=navigator.onLine?(e.name==='AbortError'?'Price request timed out.':e.message):'Offline. Showing saved observations when available.';}
   finally {clearTimeout(timeout);busy=false;if(version!==generation)refresh();}
 }
@@ -78,3 +79,33 @@ let installPrompt;window.addEventListener('beforeinstallprompt',e=>{e.preventDef
 window.addEventListener('online',refresh);window.addEventListener('offline',health);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{el('message').textContent='Offline installation unavailable in this browser.';});
 setInterval(()=>{health();if(!document.hidden)refresh();},15000);refresh();
+
+let targets = read('ter-targets:'+config?.url) || {};
+function saveTargets(){write('ter-targets:'+config?.url,targets);}
+function showTargets(){
+  el('buy-target').value=targets.buy ?? '';el('sell-target').value=targets.sell ?? '';
+  el('alert-status').textContent=[targets.buy?'Buy ≤ '+money(targets.buy):'',targets.sell?'Sell ≥ '+money(targets.sell):''].filter(Boolean).join(' · ') || 'No targets set.';
+}
+function checkAlerts(quote){
+  if(read('ter-push-enabled:'+config?.url))return;
+  const result=TERAlerts.evaluate(targets,quote,Date.now());
+  targets=result.state;saveTargets();
+  if(!result.hits.length)return;
+  const text=result.hits.map(hit=>`${hit.side==='buy'?'Buy':'Sell'} target reached: ${money(hit.price)} (${hit.side==='buy'?'at or below':'at or above'} ${money(hit.target)}).`).join(' ');
+  el('alert-banner').textContent=text;el('alert-banner').hidden=false;
+  if('Notification' in window && Notification.permission==='granted' && 'serviceWorker' in navigator){
+    navigator.serviceWorker.ready.then(reg=>reg.showNotification('TER target reached',{body:text,icon:'./icon.svg',tag:'ter-target-'+result.hits.map(h=>h.side).join('-')})).catch(()=>{el('notification-status').textContent='Phone notification failed. Your alert is shown above.';});
+  }
+}
+el('alert-settings').onsubmit=e=>{
+  e.preventDefault();const buy=el('buy-target').value,sell=el('sell-target').value;
+  targets={buy:buy?Number(buy):null,sell:sell?Number(sell):null};
+  saveTargets();showTargets();el('alert-banner').hidden=true;refresh();window.dispatchEvent(new Event('ter-targets-changed'));
+};
+el('clear-alerts').onclick=()=>{targets={};saveTargets();showTargets();el('alert-banner').hidden=true;window.dispatchEvent(new Event('ter-targets-changed'));};
+el('enable-notifications').onclick=async()=>{
+  if(!('Notification' in window)){el('notification-status').textContent='Notifications unavailable. On iPhone, install this app on your Home Screen and open it there. In-app alerts still work.';return;}
+  try{const permission=await Notification.requestPermission();el('notification-status').textContent=permission==='granted'?'Notifications enabled while this app is running. Closed-app push delivery is not configured.':'Notifications not enabled. In-app alerts still work.';}catch{el('notification-status').textContent='Could not enable notifications. In-app alerts still work.';}
+};
+el('settings').addEventListener('submit',()=>{targets=read('ter-targets:'+config?.url)||{};showTargets();el('alert-banner').hidden=true;});
+showTargets();

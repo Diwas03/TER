@@ -1,4 +1,4 @@
--- Public indicative buy quotes only. Never store TER sessions/account data here.
+-- Public indicative buy/sell quotes only. Never store TER sessions/account data here.
 begin;
 create table if not exists public.price_observations (
   id bigint generated always as identity primary key,
@@ -7,6 +7,8 @@ create table if not exists public.price_observations (
   received_at timestamptz not null default now(),
   check (observed_at <= received_at + interval '1 minute')
 );
+-- Nullable for historical rows that have only a buy quote.
+alter table public.price_observations add column if not exists sell_price numeric(18,6) check (sell_price > 0 and sell_price <= price);
 create index if not exists price_observations_time on public.price_observations (observed_at desc);
 alter table public.price_observations enable row level security;
 revoke all on public.price_observations from anon, authenticated;

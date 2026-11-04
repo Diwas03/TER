@@ -36,5 +36,14 @@ jobs:
           Path(os.environ['SECRET_FILE']).write_text('COLLECTOR_SECRET=' + value + '\n')
           PY
           supabase secrets set --remote=figymesgyoritaokpwug --yes --env-file "$secret_file"
+      - name: Provision push keys once
+        run: |
+          key_dir="$(mktemp -d)"
+          trap 'rm -rf "$key_dir"' EXIT
+          supabase secrets list --remote=figymesgyoritaokpwug --output json > "$key_dir/existing.json"
+          node scripts/prepare-push-keys.mjs "$key_dir/existing.json" "$key_dir/keys.env"
+          if [ -f "$key_dir/keys.env" ]; then
+            supabase secrets set --remote=figymesgyoritaokpwug --yes --env-file "$key_dir/keys.env"
+          fi
       - name: Deploy protected collector
         run: supabase functions deploy collect-prices --remote=figymesgyoritaokpwug --yes --no-verify-jwt

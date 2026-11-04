@@ -1,6 +1,8 @@
 import { parseQuote } from './quote.mjs';
+import { sendPriceAlerts } from './push.ts';
 
 Deno.serve(async (request: Request) => {
+  if (request.method === 'GET') return Response.json({publicKey: Deno.env.get('VAPID_PUBLIC_KEY') || null}, {headers: {'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'}});
   if (request.method !== 'POST') return new Response('Method not allowed', {status: 405});
   const secret = Deno.env.get('COLLECTOR_SECRET');
   if (!secret || secret.length < 32) return new Response('Collector not configured', {status: 503});
@@ -24,6 +26,7 @@ Deno.serve(async (request: Request) => {
       body: JSON.stringify(quote), signal: AbortSignal.timeout(10000)
     });
     if (saved.status !== 201) throw new Error('History write failed');
+    try { await sendPriceAlerts(quote); } catch { console.error('Push processing failed; quote saved'); }
     return Response.json({ok: true, ...quote});
   } catch {
     // Remote bodies/headers can contain sensitive details; never return them.
