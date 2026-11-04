@@ -35,6 +35,6 @@ jobs:
               raise SystemExit('Use a single-line secret')
           Path(os.environ['SECRET_FILE']).write_text('COLLECTOR_SECRET=' + value + '\n')
           PY
-          supabase secrets set --project-ref figymesgyoritaokpwug --env-file "$secret_file"
+          supabase secrets set --remote=figymesgyoritaokpwug --yes --env-file "$secret_file"
       - name: Deploy protected collector
-        run: supabase functions deploy collect-prices --project-ref figymesgyoritaokpwug --no-verify-jwt
+        run: supabase functions deploy collect-prices --remote=figymesgyoritaokpwug --yes --no-verify-jwt
