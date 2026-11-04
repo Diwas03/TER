@@ -1,5 +1,7 @@
 # TER WhatsApp price monitor
 
+**No Railway needed: follow [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for scheduled Supabase collection and the phone PWA.**
+
 **Current collector: public TER price API, no login/OTP/browser required. See [PWA.md](PWA.md) for current Railway and Supabase steps. Older browser instructions below apply only with `--source browser`.**
 
 **New: installable GitHub Pages PWA with Supabase price history. See [PWA.md](PWA.md) for setup.**

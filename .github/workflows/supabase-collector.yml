@@ -1,0 +1,40 @@
+name: Deploy Supabase price collector
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      COLLECTOR_SECRET: ${{ secrets.COLLECTOR_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Validate deployment credentials
+        run: |
+          python3 - <<'PY'
+          import os
+          if not os.environ.get('SUPABASE_ACCESS_TOKEN'):
+              raise SystemExit('Add SUPABASE_ACCESS_TOKEN in repository Actions secrets')
+          if len(os.environ.get('COLLECTOR_SECRET', '')) < 32:
+              raise SystemExit('Add COLLECTOR_SECRET with at least 32 random characters')
+          PY
+      - name: Configure collector secret
+        run: |
+          secret_file="$(mktemp)"
+          trap 'rm -f "$secret_file"' EXIT
+          SECRET_FILE="$secret_file" python3 - <<'PY'
+          import os
+          from pathlib import Path
+          value = os.environ['COLLECTOR_SECRET']
+          if '\n' in value or '\r' in value:
+              raise SystemExit('Use a single-line secret')
+          Path(os.environ['SECRET_FILE']).write_text('COLLECTOR_SECRET=' + value + '\n')
+          PY
+          supabase secrets set --project-ref figymesgyoritaokpwug --env-file "$secret_file"
+      - name: Deploy protected collector
+        run: supabase functions deploy collect-prices --project-ref figymesgyoritaokpwug --no-verify-jwt

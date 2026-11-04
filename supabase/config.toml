@@ -1,0 +1,3 @@
+[functions.collect-prices]
+# Authenticated with COLLECTOR_SECRET in the handler, not a public anon JWT.
+verify_jwt = false

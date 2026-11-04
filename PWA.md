@@ -1,5 +1,7 @@
 # TER PWA: public API setup
 
+**Recommended without Railway: [SUPABASE_SETUP.md](SUPABASE_SETUP.md). The worker instructions below are optional alternatives.**
+
 The default collector now reads `https://api.ter.bt/prices` without login cookies. Select exactly `TERBTN` and divide its integer `ask_price` by 10,000. The user verified this scale against the dashboard. Store the API `effective_at` timestamp; reject non-tradeable, malformed, duplicate-product, older-than-60-second or more-than-10-second-future quotes. Poll every 15 seconds, allowing slow requests to finish without overlapping/catch-up bursts. Public API availability and permission can change; stop on failures rather than bypassing authentication.
 
 ## Railway: current steps

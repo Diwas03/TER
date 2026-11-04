@@ -12,7 +12,7 @@ function validConfig(c) {
 function health() {
   if (!latest) return;
   const age = (Date.now() - Date.parse(latest.observed_at)) / 1000;
-  const stale = !Number.isFinite(age) || age > 60 || age < -10;
+  const stale = !Number.isFinite(age) || age > 120 || age < -10;
   el('health').textContent = cached || !navigator.onLine ? 'Cached · not live' : stale ? 'Stale reading' : 'Recent observation';
   el('freshness').textContent = stale ? 'Collector may be stopped or the TER price API may be unavailable.' : 'Observed recently; quote freshness is not independently verified.';
 }
