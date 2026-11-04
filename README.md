@@ -1,5 +1,7 @@
 # TER WhatsApp price monitor
 
+**Dashboard redesign and 15-second collection: activate [DASHBOARD_UPGRADE.md](DASHBOARD_UPGRADE.md).**
+
 **Buy/sell quotes and phone push alerts: activate the upgrade using [PUSH_SETUP.md](PUSH_SETUP.md).**
 
 **No Railway needed: follow [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for scheduled Supabase collection and the phone PWA.**

@@ -1,5 +1,5 @@
-const CACHE = 'ter-watch-v5';
-const FILES = ['./','./index.html','./style.css','./app.js','./alerts.js','./push.js','./config.js','./manifest.webmanifest','./icon.svg'];
+const CACHE = 'ter-watch-v6';
+const FILES = ['./','./index.html','./style.css','./app.js','./alerts.js','./realtime.js','./push.js','./config.js','./manifest.webmanifest','./icon.svg'];
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES))));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('ter-watch-')&&key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())));
 self.addEventListener('fetch',event=>{

@@ -2,6 +2,7 @@ const el = id => document.getElementById(id);
 const read = key => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
 const write = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
 let config = read('ter-connection') || window.TER_CONFIG;
+let quoteSide = 'buy', historySnapshot = null, historyLoadedAt = 0, stopRealtime = null;
 let days = 1, generation = 0, busy = false, controller, latest = null, cached = false;
 const money = value => 'Nu. ' + Number(value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4});
 function validConfig(c) {
@@ -12,9 +13,10 @@ function validConfig(c) {
 function health() {
   if (!latest) return;
   const age = (Date.now() - Date.parse(latest.observed_at)) / 1000;
-  const stale = !Number.isFinite(age) || age > 120 || age < -10;
-  el('health').textContent = cached || !navigator.onLine ? 'Cached · not live' : stale ? 'Stale reading' : 'Recent observation';
-  el('freshness').textContent = stale ? 'Collector may be stopped or the TER price API may be unavailable.' : 'Observed recently; quote freshness is not independently verified.';
+  const stale = !Number.isFinite(age) || age > 60 || age < -10;
+  el('health').dataset.state = cached || !navigator.onLine ? 'cached' : stale ? 'stale' : 'fresh';
+  el('health').textContent = cached || !navigator.onLine ? 'Cached · not live' : stale ? 'Stale reading' : 'Fresh quote';
+  el('freshness').textContent = stale ? 'Collector may be stopped or the TER price API may be unavailable.' : 'Source timestamp verified · indicative quote.';
 }
 function renderHistory(points) {
   const usable = points.filter(p => Number.isFinite(Number(p.price)) && Number(p.price) > 0 && Number.isFinite(Date.parse(p.bucket)));
@@ -27,58 +29,96 @@ function renderHistory(points) {
   el('low').textContent = money(low); el('high').textContent = money(high);
   el('samples').textContent = usable.reduce((n,p)=>n+Number(p.samples),0).toLocaleString();
   const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox','0 0 900 260');
-  const start = Date.now() - days * 86400000, end = Date.now(), span = high-low || Math.max(high*.002, .01);
-  const x = p => 70 + (Date.parse(p.bucket)-start)/(end-start)*810;
+  const width=Math.max(300,Math.min(900,el('chart').clientWidth)),plotWidth=width-82;
+  const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox',`0 0 ${width} 260`);
+  const end = Date.now(), start = end - days * 86400000, span = high-low || Math.max(high*.002, .01);
+  const x = p => 70 + (Date.parse(p.bucket)-start)/(end-start)*plotWidth;
   const y = p => 220 - (Number(p.price)-low+span*.15)/(span*1.3)*185;
   for(let i=0;i<4;i++) {
     const val=low+span*i/3, yy=220-(val-low+span*.15)/(span*1.3)*185;
-    const label=document.createElementNS(ns,'text'); label.setAttribute('x','0');label.setAttribute('y',String(yy+4));label.setAttribute('fill','#65766b');label.setAttribute('font-size','12');label.textContent=val.toFixed(2);svg.append(label);
+    const grid=document.createElementNS(ns,'line');grid.setAttribute('x1','65');grid.setAttribute('x2',width-12);grid.setAttribute('y1',yy);grid.setAttribute('y2',yy);grid.setAttribute('stroke','#eef0f6');grid.setAttribute('stroke-dasharray','4 5');svg.append(grid);
+    const label=document.createElementNS(ns,'text'); label.setAttribute('x','0');label.setAttribute('y',String(yy+4));label.setAttribute('fill','#8c95a6');label.setAttribute('font-size','12');label.textContent=val.toFixed(2);svg.append(label);
   }
   let path = '', previous = null;
   const gap = (days===1?5:days===7?30:120)*60000*1.5;
   for(const p of usable) {
     path += `${previous && Date.parse(p.bucket)-Date.parse(previous.bucket)<=gap?'L':'M'} ${x(p)} ${y(p)} `;
-    const dot=document.createElementNS(ns,'circle');dot.setAttribute('cx',x(p));dot.setAttribute('cy',y(p));dot.setAttribute('r','2');dot.setAttribute('fill','#a87924');svg.append(dot);
+    const dot=document.createElementNS(ns,'circle');dot.setAttribute('cx',x(p));dot.setAttribute('cy',y(p));dot.setAttribute('r','2');dot.setAttribute('fill',quoteSide==='buy'?'#6554d9':'#1b8d77');svg.append(dot);
     previous=p;
     const row=document.createElement('tr');
     [new Date(p.bucket).toLocaleString(),money(p.price),String(p.samples)].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell);});el('rows').append(row);
   }
-  const line=document.createElementNS(ns,'path');line.setAttribute('d',path);line.setAttribute('fill','none');line.setAttribute('stroke','#184e43');line.setAttribute('stroke-width','2');svg.append(line);el('chart').append(svg);
+  const line=document.createElementNS(ns,'path');line.setAttribute('d',path);line.setAttribute('fill','none');line.setAttribute('stroke',quoteSide==='buy'?'#6554d9':'#1b8d77');line.setAttribute('stroke-width','2');svg.append(line);
+  for(let i=0;i<4;i++){const tick=document.createElementNS(ns,'text');tick.setAttribute('x',70+i*plotWidth/3);tick.setAttribute('y','250');tick.setAttribute('fill','#8c95a6');tick.setAttribute('font-size','11');tick.setAttribute('text-anchor',i===3?'end':'start');const date=new Date(start+(end-start)*i/3);tick.textContent=days===1?date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):date.toLocaleDateString([],{month:'short',day:'numeric'});svg.append(tick);}
+  el('chart').append(svg);
 }
-function render(data, fromCache) {
-  latest = data.latest; cached = fromCache;
-  el('price').textContent = latest ? money(latest.price) : '—';
-  el('sell-price').textContent = latest && Number(latest.sell_price) > 0 ? money(latest.sell_price) : '—';
-  el('seen').textContent = latest ? 'Observed: '+new Date(latest.observed_at).toLocaleString() : 'No observation available';
-  if (!latest) { el('health').textContent='Waiting for collector';el('freshness').textContent='No prices have been recorded yet.'; }
-  renderHistory(data.history);health();
+function renderQuote(quote,fromCache){
+  if(!quote){if(!latest){el('price').textContent='—';el('sell-price').textContent='—';el('spread').textContent='—';el('seen').textContent='Waiting for an observation';el('health').dataset.state='waiting';el('health').textContent='Waiting for collector';el('freshness').textContent='No prices have been recorded yet.';}return;}
+  if(!Number.isFinite(Number(quote.price))||Number(quote.price)<=0||!Number.isFinite(Date.parse(quote.observed_at)))return;
+  if(latest && Date.parse(quote.observed_at)<Date.parse(latest.observed_at))return;
+  const previous=latest;
+  latest=quote;cached=fromCache;
+  for(const [id,key,movement] of [['price','price','buy-movement'],['sell-price','sell_price','sell-movement']]){
+    const amount=Number(quote[key]),old=Number(previous?.[key]);
+    el(id).textContent=amount>0?money(amount):'—';
+    if(!fromCache&&old>0&&amount>0&&amount!==old){
+      const change=amount-old;el(movement).textContent=(change>0?'+':'-')+Math.abs(change).toFixed(4)+' since last quote';
+      el(id).closest('.price-card').classList.add('changed');setTimeout(()=>el(id).closest('.price-card').classList.remove('changed'),1100);
+    }else if(!previous)el(movement).textContent='Waiting for next change';
+  }
+  const spread=Number(quote.price)-Number(quote.sell_price);
+  el('spread').textContent=Number(quote.sell_price)>0&&spread>=0?money(spread):'—';
+  el('seen').textContent='As of '+new Date(quote.observed_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  health();
 }
+function render(data, fromCache) {renderQuote(data.latest,fromCache);renderHistory(data.history);}
+function connectRealtime(){
+  stopRealtime?.();stopRealtime=null;
+  try{validConfig(config);}catch{return;}
+  const project=config.url;
+  stopRealtime=TERRealtime.connect(config,quote=>{
+    if(config.url!==project)return;
+    renderQuote(quote,false);checkAlerts(latest);
+    if(historySnapshot){write('ter-prices:'+project+':'+quoteSide+':'+days,{latest,history:historySnapshot});}
+  },()=>{});
+}
+
 async function refresh() {
   if (busy) return;
   let c = {...config}; const version=generation, range=days;
-  try { validConfig(c); } catch(e) {el('health').textContent='Setup needed';el('message').textContent=e.message;return;}
+  try { validConfig(c); } catch(e) {el('health').dataset.state='waiting';el('health').textContent='Setup needed';el('message').textContent=e.message;return;}
   busy=true;controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),15000);
-  const cacheKey='ter-prices:'+c.url+':'+range;
-  const old=read(cacheKey);if(old)render(old,true);
+  const cacheKey='ter-prices:'+c.url+':'+quoteSide+':'+range;
+  const old=read(cacheKey);if(old&&!latest)render(old,true);
   async function api(path, options={}) {
     const r=await fetch(c.url+'/rest/v1/'+path,{...options,headers:{apikey:c.anonKey,Authorization:'Bearer '+c.anonKey,'Content-Type':'application/json'},signal:controller.signal,cache:'no-store'});
     if(!r.ok)throw Error('Price service unavailable ('+r.status+'). Check project settings and SQL setup.');return r.json();
   }
   try {
-    const [quotes,history]=await Promise.all([api('price_observations?select=*&order=observed_at.desc&limit=1'),api('rpc/price_history',{method:'POST',body:JSON.stringify({range_days:range})})]);
+    const historyDue=!historySnapshot||Date.now()-historyLoadedAt>=60000;
+    const historyRequest=historyDue?api('rpc/price_history_side',{method:'POST',body:JSON.stringify({range_days:range,quote_side:quoteSide})}).catch(error=>{
+      if(quoteSide==='buy')return api('rpc/price_history',{method:'POST',body:JSON.stringify({range_days:range})});
+      throw error;
+    }):Promise.resolve(historySnapshot);
+    const [quotes,historyResult]=await Promise.all([api('price_observations?select=*&order=observed_at.desc&limit=1'),historyRequest.then(history=>({history})).catch(()=>({history:[],failed:true}))]);
+    const history=historyResult.history;
     if(version!==generation)return;
-    const data={latest:quotes[0]||null,history};render(data,false);write(cacheKey,data);el('message').textContent='';checkAlerts(data.latest);
+    if(historyResult.failed)el('chart-note').textContent='History unavailable. Run the dashboard SQL upgrade if sell history is not configured.';
+    else el('chart-note').textContent='Bucket averages · gaps indicate missing observations';
+    if(historyDue&&!historyResult.failed){historySnapshot=history;historyLoadedAt=Date.now();}
+    if(version!==generation)return;
+    const data={latest:quotes[0]||null,history};render(data,false);write(cacheKey,{latest,history});el('message').textContent='';checkAlerts(latest);
   } catch(e) {if(version!==generation)return;cached=true;health();el('health').textContent=latest?'Cached · not live':'Unavailable';el('message').textContent=navigator.onLine?(e.name==='AbortError'?'Price request timed out.':e.message):'Offline. Showing saved observations when available.';}
   finally {clearTimeout(timeout);busy=false;if(version!==generation)refresh();}
 }
-el('settings').onsubmit=e=>{e.preventDefault();const next={url:el('url').value.trim().replace(/\/$/,''),anonKey:el('key').value.trim()};try{validConfig(next);}catch(error){el('message').textContent=error.message;return;}config=next;write('ter-connection',next);generation++;controller?.abort();latest=null;render({latest:null,history:[]},false);refresh();};
-document.querySelectorAll('[data-days]').forEach(button=>button.onclick=()=>{days=Number(button.dataset.days);generation++;controller?.abort();document.querySelectorAll('[data-days]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));renderHistory([]);refresh();});
+el('settings').onsubmit=e=>{e.preventDefault();const next={url:el('url').value.trim().replace(/\/$/,''),anonKey:el('key').value.trim()};try{validConfig(next);}catch(error){el('message').textContent=error.message;return;}config=next;write('ter-connection',next);generation++;controller?.abort();latest=null;historySnapshot=null;historyLoadedAt=0;render({latest:null,history:[]},false);connectRealtime();refresh();};
+document.querySelectorAll('[data-days]').forEach(button=>button.onclick=()=>{days=Number(button.dataset.days);historySnapshot=null;historyLoadedAt=0;el('chart-period').textContent=days===1?'Last 24 hours':'Last '+days+' days';generation++;controller?.abort();document.querySelectorAll('[data-days]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));renderHistory([]);refresh();});
+document.querySelectorAll('[data-side]').forEach(button=>button.onclick=()=>{quoteSide=button.dataset.side;historySnapshot=null;historyLoadedAt=0;generation++;controller?.abort();document.querySelectorAll('[data-side]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));el('table-price-label').textContent='Average '+quoteSide+' BTN';el('chart').setAttribute('aria-label',quoteSide+' price history chart');renderHistory([]);refresh();});
 el('url').value=config?.url||'';el('key').value=config?.anonKey||'';el('refresh').onclick=refresh;
 let installPrompt;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;el('install').hidden=false;});el('install').onclick=async()=>{await installPrompt?.prompt();installPrompt=null;el('install').hidden=true;};
-window.addEventListener('online',refresh);window.addEventListener('offline',health);document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
+window.addEventListener('online',()=>{connectRealtime();refresh();});window.addEventListener('offline',health);document.addEventListener('visibilitychange',()=>{if(!document.hidden){connectRealtime();refresh();}else{stopRealtime?.();stopRealtime=null;}});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{el('message').textContent='Offline installation unavailable in this browser.';});
-setInterval(()=>{health();if(!document.hidden)refresh();},15000);refresh();
+setInterval(()=>{health();if(!document.hidden)refresh();},15000);connectRealtime();refresh();
 
 let targets = read('ter-targets:'+config?.url) || {};
 function saveTargets(){write('ter-targets:'+config?.url,targets);}
@@ -109,3 +149,6 @@ el('enable-notifications').onclick=async()=>{
 };
 el('settings').addEventListener('submit',()=>{targets=read('ter-targets:'+config?.url)||{};showTargets();el('alert-banner').hidden=true;});
 showTargets();
+
+let resizeTimer;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(historySnapshot)renderHistory(historySnapshot);},100);});
+document.querySelectorAll('nav a').forEach(link=>link.addEventListener('click',()=>{document.querySelectorAll('nav a').forEach(item=>item.classList.toggle('nav-active',item===link));}));
