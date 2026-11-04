@@ -1,4 +1,4 @@
-"""Read an explicitly selected TER buy-price field and alert through Twilio."""
+"""Collect TER buy prices from its public API, with optional browser fallback."""
 import argparse
 import base64
 import json
@@ -152,6 +152,68 @@ def publish_history(price, observed_at):
             raise RuntimeError('Price history write rejected')
 
 
+def parse_api_quote(payload, now=None):
+    now = now or datetime.now(timezone.utc)
+    quotes = payload.get('prices') if isinstance(payload, dict) else None
+    if not isinstance(quotes, list):
+        raise ValueError('Missing price list')
+    matches = [q for q in quotes if isinstance(q, dict) and q.get('product_symbol') == 'TERBTN']
+    if len(matches) != 1:
+        raise ValueError('Expected exactly one TERBTN quote')
+    quote = matches[0]
+    raw = quote.get('ask_price')
+    if type(raw) is not int or raw <= 0 or quote.get('tradeable') is not True:
+        raise ValueError('Invalid or non-tradeable TERBTN ask')
+    stamp = quote.get('effective_at')
+    if not isinstance(stamp, str):
+        raise ValueError('Missing quote timestamp')
+    effective = datetime.fromisoformat(stamp.replace('Z', '+00:00'))
+    if effective.tzinfo is None or not -10 <= (now - effective).total_seconds() <= 60:
+        raise ValueError('Stale or future TER quote')
+    return Decimal(raw) / Decimal(10000), effective.astimezone(timezone.utc).isoformat()
+
+
+def fetch_api_quote():
+    # No login cookies, tokens, CSRF headers or browser session are used.
+    request = Request('https://api.ter.bt/prices', headers={'Accept': 'application/json'})
+    with urlopen(request, timeout=10) as response:
+        if response.status != 200:
+            raise RuntimeError('TER price API unavailable')
+        return parse_api_quote(json.load(response))
+
+
+def run_api(args, threshold, interval, state_path):
+    while True:
+        started = time.monotonic()
+        try:
+            price, observed_at = fetch_api_quote()
+            LOG.info('Observed TERBTN API buy price: %s; effective at: %s', price, observed_at)
+            if not args.dry_run:
+                # Persist the source timestamp, never relabel an old quote as current.
+                try:
+                    publish_history(price, observed_at)
+                except Exception as exc:
+                    LOG.warning('History write failed (%s); observation not stored', type(exc).__name__)
+                    if args.once:
+                        raise
+                state = load_state(state_path)
+                if not args.no_alerts:
+                    state = process_price(price, threshold, state, send_whatsapp)
+                    save_state(state_path, state)
+                try:
+                    publish_status(price, threshold, state)
+                except Exception as exc:
+                    LOG.warning('Dashboard update failed (%s)', type(exc).__name__)
+        except Exception as exc:
+            LOG.error('API collection failed (%s); no fresh reading recorded', type(exc).__name__)
+            if args.once:
+                raise SystemExit(1) from None
+        if args.once:
+            return
+        # One request per interval; slow checks never cause catch-up bursts.
+        time.sleep(max(0, interval - (time.monotonic() - started)))
+
+
 def session_init_script(session_storage):
     # JSON encoding prevents session values from becoming executable JavaScript.
     payload = json.dumps(session_storage)
@@ -160,6 +222,7 @@ def session_init_script(session_storage):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source', choices=('api', 'browser'), default='api', help='Public API by default; browser is a legacy fallback')
     parser.add_argument('--no-alerts', action='store_true', help='Collect prices without WhatsApp alerts')
     parser.add_argument('--once', action='store_true', help='Read once and exit')
     parser.add_argument('--dry-run', action='store_true', help='Read price without sending or changing state')
@@ -179,10 +242,13 @@ def main():
     runtime = Path(os.environ.get('TER_RUNTIME_DIR', '.runtime'))
     runtime.mkdir(parents=True, exist_ok=True, mode=0o700)
     state_path = runtime / 'state.json'
-    selector = '' if args.login else required('TER_PRICE_SELECTOR')
     if not args.dry_run and not args.login and not args.no_alerts:
         for name in ('TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_WHATSAPP_FROM', 'TWILIO_WHATSAPP_TO'):
             required(name)
+    if args.source == 'api' and not args.login:
+        run_api(args, threshold, interval, state_path)
+        return
+    selector = '' if args.login else required('TER_PRICE_SELECTOR')
     from playwright.sync_api import sync_playwright
     # One process per profile: Chromium also locks persistent profiles.
     with sync_playwright() as p:

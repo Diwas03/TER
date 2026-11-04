@@ -1,61 +1,38 @@
-# TER PWA and price history
+# TER PWA: public API setup
 
-The new frontend is in `pwa/`; the old Vercel dashboard remains in `web/`. GitHub Pages serves only the PWA directory. No frontend build or npm dependencies are needed.
+The default collector now reads `https://api.ter.bt/prices` without login cookies. Select exactly `TERBTN` and divide its integer `ask_price` by 10,000. The user verified this scale against the dashboard. Store the API `effective_at` timestamp; reject non-tradeable, malformed, duplicate-product, older-than-60-second or more-than-10-second-future quotes. Poll every 15 seconds, allowing slow requests to finish without overlapping/catch-up bursts. Public API availability and permission can change; stop on failures rather than bypassing authentication.
 
-You can view stored prices without logging into TER. The collector still needs a valid TER session; this application cannot bypass TER OTP or session expiry. When the collector stops, the last price stays visible with a stale indicator. History begins when collection starts; no past prices are invented. No live collection, Supabase deployment, or Pages deployment has been verified yet.
+## Railway: current steps
 
-## 1. Create Supabase
+1. Deploy the latest `main` commit of `Diwas03/TER`. The Dockerfile now uses Python only and defaults to `python monitor.py --no-alerts`.
+2. If a custom Start Command is set, use `python monitor.py --no-alerts`.
+3. Set private worker variables `SUPABASE_URL=https://figymesgyoritaokpwug.supabase.co` and `SUPABASE_SERVICE_ROLE_KEY` to your private legacy service-role key. Set `TER_INTERVAL_SECONDS=15`.
+4. Remove unneeded `TER_BROWSER_SESSION_JSON` and `TER_PRICE_SELECTOR` variables. This API path needs no TER credentials. The previously exposed TER session should be revoked.
+5. Run `supabase/schema.sql` in Supabase SQL Editor once (safe to rerun).
+6. Deploy, require `Observed TERBTN API buy price` in logs, and verify matching rows in Supabase `price_observations`. A running worker without rows does not prove history works. Failed writes log `History write failed`.
+7. Keep a single worker. Railway's trial still expires; the smaller worker reduces resource requirements but does not make hosting free. GitHub Pages cannot run this collector. GitHub scheduled Actions are a slower alternative, not 15-second collection.
 
-1. Create a Supabase project. Run all of `supabase/schema.sql` in its SQL Editor. It is safe to rerun.
-2. In project API settings find the HTTPS project URL and **legacy anon** key. Put these public values in `pwa/config.js` (`url`, `anonKey`). Alternatively enter them in the PWA connection settings on each device. The frontend currently expects a legacy anon JWT, not the newer publishable key format.
-3. Keep the **service_role** key private. Store it only in the collector host's private environment as `SUPABASE_SERVICE_ROLE_KEY`. Set `SUPABASE_URL` there too. Never put this key in the frontend, GitHub Pages variables/artifacts, or a commit.
+No separate API key or TER login is needed while this endpoint remains public. The cloud worker may receive a different response from your home connection; validate its actual logs.
 
-The schema intentionally makes price observations publicly readable, including through the REST API. Only the collector's privileged key can write; anonymous INSERT/UPDATE/DELETE are denied by permissions and row level security. It stores only price and timestamps, never user/session/account data. Use a dedicated project or review this public-price policy before applying to an existing database. A service-role key is privileged across its project.
+## Phone PWA and GitHub Pages
 
-History returns 5-minute averages for 24h, 30-minute averages for 7d, and 2-hour averages for 30d; low/high statistics use actual readings. Missing buckets appear as gaps. Times display in the device's local timezone. The raw table grows by about 5,760 rows/day at a 15-second interval; monitor Supabase quotas and configure retention as needed. The UI displays only the last 30 days but does not delete old rows.
+1. Supabase API settings: copy the public **legacy anon** key, not service_role. Enter it and the project URL in the PWA Connection settings, or put only these public values in `pwa/config.js`.
+2. GitHub Settings → Pages → Source → GitHub Actions. Private repositories need an eligible plan; alternatively publish only the PWA in a separate public repository. Do not make a private repository public without reviewing its files and history for secrets.
+3. Run the **Deploy TER PWA to GitHub Pages** workflow. Open the successful deployment URL. Android Chrome: Install app; iPhone Safari: Share → Add to Home Screen.
+4. The PWA refreshes every 15 seconds while visible. Offline cached observations are labeled; timestamps and stale indicators prevent presenting old prices as live. Public read access to prices is intentional; privileged writes stay on the worker.
 
-## 2. Publish on GitHub Pages
+History starts when collection begins. The schema returns bucket averages for 24h/7d/30d; low/high statistics use actual readings. Raw collection retains each successful poll, approximately 5,760 rows/day, so monitor storage quotas. No automatic retention deletion is configured. Source timestamps may repeat if TER has not published a new quote.
 
-1. Commit/push these changes to `Diwas03/TER` on `main`, including your public config if using shared defaults.
-2. Repository Settings → Pages → Source → **GitHub Actions**.
-3. Run **Deploy TER PWA to GitHub Pages** from Actions (or push a PWA change to main).
-4. Open the deployment URL reported by the successful workflow. Install via Chrome/Edge's install menu; on iPhone use Safari → Share → Add to Home Screen. Installation support depends on the browser. The app uses relative URLs to support the `/TER/` project path.
-
-The shell and latest successful price/history responses are saved on the device. Offline cached data is labeled and never described as live. Connection settings contain only public values and remain on that device. An initial successful online visit is needed for offline use. No TER credentials belong in this app.
-
-## 3. Start the collector
-
-Use the existing Railway/Render worker instructions in `CLOUD.md` or `RENDER.md` (this repository is **Diwas03/TER**; some older docs refer to a previous repository). A persistent worker is needed for continuous collection; GitHub Pages cannot run Python, keep a browser logged in, or collect prices in the background.
-
-Set privately on the worker:
-
-- `SUPABASE_URL`: your project URL.
-- `SUPABASE_SERVICE_ROLE_KEY`: private legacy service-role key.
-- `TER_PRICE_SELECTOR`: a unique selector verified against the real buy-price number.
-- `TER_BROWSER_SESSION_JSON`: private session exported using the existing `windows/Export-Session.ps1` flow, or use a persistent local logged-in profile. Do not share sessions in chat.
-
-With Python dependencies and Playwright Chromium installed, validate the selector/session first:
+## Local validation and optional alerts
 
 ```sh
-python monitor.py --once --dry-run
+python3 monitor.py --once --dry-run
+python3 monitor.py --once --no-alerts
+python3 monitor.py --no-alerts
 ```
 
-Compare the reading with the real TER page. Then test one history write with **no WhatsApp**:
+The first command never writes history or sends alerts. The second requires configured Supabase to save a row. Without SUPABASE_URL, history publishing is optional and skipped. To enable existing WhatsApp alerts, use `python monitor.py` with the Twilio settings from the legacy instructions. The default Docker command does not send alerts.
 
-```sh
-python monitor.py --once --no-alerts
-```
+Legacy browser mode remains available locally as `python monitor.py --source browser`; install `requirements.txt` and Playwright Chromium for that fallback. It requires a selector and valid session. The slim Docker image intentionally does not contain the browser dependencies. Older CLOUD/DEPLOY/RENDER instructions describe this legacy browser setup; use the API steps above for current deployment.
 
-Require a successful row in Supabase and matching price/time on the PWA. Start continuous collection using `python monitor.py --no-alerts` (set this as the worker start-command override when using the existing Dockerfile). This mode does not alter alert-suppression state. For existing WhatsApp alerts, leave the original `python monitor.py` command and configure Twilio as documented. Prices are stored before attempting WhatsApp; failed history writes are logged and retried only via later observations, not durable backfill. Dry runs never publish history. Avoid multiple collectors writing duplicate readings.
-
-When TER expires the login, manually log in with OTP, replace the private exported session, and restart the worker. No automatic OTP refresh is implemented. A documented public TER price API would be preferable if TER offers one.
-
-## Validation
-
-```sh
-.venv/bin/python -m unittest discover -s tests -v
-node --check pwa/app.js
-node --check pwa/sw.js
-```
-
-Serve locally for UI review: `python3 -m http.server 8000 --directory pwa`. Service workers require HTTPS or localhost. Database permissions/RPC behavior, real TER reading, history chart with live data, mobile installation, and public deployment must be verified after project/host configuration. The repository tests exercise HTTP dashboard routes, price logic, history payloads, and collection-only behavior with mocked external services.
+Tests: `.venv/bin/python -m unittest discover -s tests -v`. Tests validate parsing, timestamp rules, no-session collection, history writes and existing alerts using mocks. The API response and scale were verified on the user's computer; live API/Supabase access from the development environment and Railway deployment remain unverified.

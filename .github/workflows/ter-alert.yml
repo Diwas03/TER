@@ -30,6 +30,8 @@ jobs:
       TER_BROWSER_SESSION_JSON: ${{ secrets.TER_BROWSER_SESSION_JSON }}
       TER_PRICE_SELECTOR: ${{ vars.TER_PRICE_SELECTOR }}
       TER_URL: ${{ vars.TER_URL || 'https://ter.bt/portal/dashboard/trade/buy' }}
+      SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       TER_THRESHOLD: '126'
       TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
       TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
@@ -43,8 +45,6 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Python dependencies
         run: python3 -m pip install --no-cache-dir -r requirements.txt
-      - name: Check session is configured without printing it
-        run: python3 -c "from monitor import required; required('TER_BROWSER_SESSION_JSON'); required('TER_PRICE_SELECTOR')"
       - name: Restore alert suppression state only
         uses: actions/cache/restore@v4
         with:

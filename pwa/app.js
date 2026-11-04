@@ -14,7 +14,7 @@ function health() {
   const age = (Date.now() - Date.parse(latest.observed_at)) / 1000;
   const stale = !Number.isFinite(age) || age > 60 || age < -10;
   el('health').textContent = cached || !navigator.onLine ? 'Cached · not live' : stale ? 'Stale reading' : 'Recent observation';
-  el('freshness').textContent = stale ? 'Collector may be stopped or TER may need a new login.' : 'Observed recently; quote freshness is not independently verified.';
+  el('freshness').textContent = stale ? 'Collector may be stopped or the TER price API may be unavailable.' : 'Observed recently; quote freshness is not independently verified.';
 }
 function renderHistory(points) {
   const usable = points.filter(p => Number.isFinite(Number(p.price)) && Number(p.price) > 0 && Number.isFinite(Date.parse(p.bucket)));

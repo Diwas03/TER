@@ -46,7 +46,7 @@ class HistoryTests(unittest.TestCase):
         playwright.chromium.launch_persistent_context.return_value = browser
         context = MagicMock()
         context.__enter__.return_value = playwright
-        with patch('sys.argv', ['monitor.py', '--once', '--no-alerts']), \
+        with patch('sys.argv', ['monitor.py', '--source', 'browser', '--once', '--no-alerts']), \
              patch('playwright.sync_api.sync_playwright', return_value=context), \
              patch('monitor.publish_history') as history, \
              patch('monitor.send_whatsapp') as alert, \

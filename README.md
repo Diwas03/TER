@@ -1,5 +1,7 @@
 # TER WhatsApp price monitor
 
+**Current collector: public TER price API, no login/OTP/browser required. See [PWA.md](PWA.md) for current Railway and Supabase steps. Older browser instructions below apply only with `--source browser`.**
+
 **New: installable GitHub Pages PWA with Supabase price history. See [PWA.md](PWA.md) for setup.**
 
 **To run checks in this GitHub repository without your PC, follow [GITHUB_ACTIONS.md](GITHUB_ACTIONS.md).** This checks approximately every five minutes, can be delayed, and requires private session/WhatsApp configuration. Scheduled checks are disabled until enabled in repository settings. This is an alternative to the continuous 15-second cloud worker.
