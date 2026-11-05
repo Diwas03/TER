@@ -24,7 +24,7 @@ function renderHistory(points) {
   el('rows').replaceChildren();el('chart').replaceChildren();
   el('samples').textContent=model.samples?model.samples.toLocaleString():'—';
   for(const series of model.series)el(series.side+'-range').textContent=series.low===null?'—':money(series.low)+' / '+money(series.high);
-  if(!model.rows.length){el('chart').textContent='No stored readings in this period yet.';return;}
+  if(!model.rows.length){el('chart').textContent='No stored readings in the last '+hours+(hours===1?' hour.':' hours.')+' Live price cards do not create history; check the Supabase collector.';return;}
   const ns='http://www.w3.org/2000/svg',width=Math.max(300,Math.min(900,el('chart').clientWidth)),plotWidth=width-82;
   const svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox',`0 0 ${width} 260`);
   const span=model.high-model.low||Math.max(model.high*.002,.01);
@@ -102,7 +102,7 @@ async function refresh() {
   const isCurrent=()=>version===generation;
   async function api(path,options={}){
     const response=await fetch(c.url+'/rest/v1/'+path,{...options,headers:TERPublicConfig.headers(c),signal,cache:'no-store'});
-    if(!response.ok)throw Error('Stored prices unavailable');return response.json();
+    if(!response.ok){const error=new Error(response.status===401||response.status===403?'History access denied. Check your public key and database read permissions.':'Stored price request failed (HTTP '+response.status+').');throw error;}return response.json();
   }
   const direct=(async()=>{
     try{
@@ -126,17 +126,26 @@ async function refresh() {
     if(!TERPublicConfig.valid(c)){if(isCurrent()){renderHistory([]);el('chart-note').textContent='Add your public Supabase key in Connection settings to load stored history.';}return;}
     if(historySnapshot&&Date.now()-historyLoadedAt<60000){renderHistory(historySnapshot);return;}
     try{
-      let points,legacy=false;
+      let points,rawFallback=false;
       try{points=await api('rpc/price_history_window',{method:'POST',body:JSON.stringify({window_hours:range})});}
-      catch{
-        const results=await Promise.allSettled(['buy','sell'].map(quote_side=>api('rpc/price_history_side',{method:'POST',body:JSON.stringify({range_days:1,quote_side})})));
-        if(results.every(r=>r.status==='rejected'))throw Error('History not configured');
-        points=TERChart.mergeLegacy(...results.map(r=>r.status==='fulfilled'?r.value:[]));legacy=true;
+      catch(rpcError){
+        // Read existing public observations if PostgREST hasn't exposed the new RPC.
+        const now=Date.now(),start=new Date(now-range*3600000).toISOString(),end=new Date(now).toISOString();
+        let after=null,observations=[],complete=false;
+        for(let page=0;page<20;page++){
+          const path='price_observations?select=id,price,sell_price,observed_at&observed_at=gte.'+encodeURIComponent(start)+'&observed_at=lte.'+encodeURIComponent(end)+'&order=id.asc&limit=1000'+(after===null?'':'&id=gt.'+encodeURIComponent(after));
+          const rows=await api(path);
+          if(!rows.length){complete=true;break;}
+          observations.push(...rows);const next=rows[rows.length-1].id;
+          if(next===undefined||next===after)throw Error('History pagination failed. Run chart-windows.sql.');after=next;
+        }
+        if(!complete)throw Error('Too many history rows for fallback. Run chart-windows.sql for the server-side query.');
+        points=TERChart.aggregate(observations,range,now);rawFallback=true;
       }
       if(!isCurrent())return;
       historySnapshot=points;historyLoadedAt=Date.now();renderHistory(points);
-      el('chart-note').textContent=legacy?'5-minute averages · run chart-windows.sql for finer 1h / 2h history.':'Buy and sell bucket averages · gaps indicate missing observations';
-    }catch{if(isCurrent())el('chart-note').textContent='History unavailable. Live price cards update independently.';}
+      el('chart-note').textContent=rawFallback?'Chart built from stored observations · run the updated chart-windows.sql to restore the faster history query.':'Buy and sell bucket averages · gaps indicate missing observations';
+    }catch(error){if(isCurrent()){el('chart-note').textContent=error.message;el('chart').replaceChildren();el('chart').textContent='History could not be loaded. Current price cards can still update independently.';}}
   })();
   try{
     await Promise.allSettled([direct,quotes,history]);

@@ -23,3 +23,12 @@ test('legacy history merges by timestamp without double counting observations',(
  const rows=mergeLegacy([{bucket,price:'125',low:'124',high:'126',samples:4}],[{bucket,price:'122',low:'121',high:'123',samples:4}]);
  const m=prepare(rows,1,now);assert.equal(m.samples,4);assert.equal(m.step,300000);assert.equal(m.rows[0].sell_price,122);
 });
+
+test('raw fallback aggregates both prices and preserves missing sell data',()=>{
+ const points=globalThis.TERChart.aggregate([
+  {observed_at:new Date(now-1000).toISOString(),price:'125',sell_price:'122'},
+  {observed_at:new Date(now-1000).toISOString(),price:'127',sell_price:null},
+  {observed_at:new Date(now-7200000).toISOString(),price:'999',sell_price:'900'}
+ ],1,now);
+ assert.equal(points.length,1);assert.equal(points[0].buy_price,126);assert.equal(points[0].sell_price,122);assert.equal(points[0].samples,2);assert.equal(points[0].buy_low,125);assert.equal(points[0].buy_high,127);
+});

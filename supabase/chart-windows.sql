@@ -27,4 +27,5 @@ as $$
 $$;
 revoke all on function public.price_history_window(integer) from public;
 grant execute on function public.price_history_window(integer) to anon, authenticated, service_role;
+notify pgrst, 'reload schema';
 commit;
