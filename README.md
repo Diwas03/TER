@@ -1,5 +1,7 @@
 # TER WhatsApp price monitor
 
+**1h / 2h / 24h dual buy/sell charts: [CHART_RANGES.md](CHART_RANGES.md).**
+
 **Price sync fix: current quote cards now fetch TER separately from saved history. See [PRICE_SYNC.md](PRICE_SYNC.md) for activation and timing limits.**
 
 **Deployment troubleshooting and public key configuration: [DEPLOYMENT.md](DEPLOYMENT.md). The legacy Actions monitor is now manual-only; Supabase handles scheduled collection.**

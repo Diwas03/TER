@@ -2,9 +2,9 @@ const el = id => document.getElementById(id);
 const read = key => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
 const write = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} };
 let config = read('ter-connection') || window.TER_CONFIG;
-let quoteSide = 'buy', historySnapshot = null, historyLoadedAt = 0, stopRealtime = null;
+let historySnapshot = null, historyLoadedAt = 0, stopRealtime = null;
 let quoteSource='stored';
-let days = 1, generation = 0, busy = false, pendingRefresh = false, controller, latest = null, cached = false;
+let hours = 1, generation = 0, busy = false, pendingRefresh = false, controller, latest = null, cached = false;
 const money = value => 'Nu. ' + Number(value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 4});
 function validConfig(c) {
   if(!TERPublicConfig.valid(c))throw Error('Save your Supabase URL and public publishable or legacy anon key in Connection settings.');
@@ -20,39 +20,45 @@ function health() {
 }
 
 function renderHistory(points) {
-  const usable = points.filter(p => Number.isFinite(Number(p.price)) && Number(p.price) > 0 && Number.isFinite(Date.parse(p.bucket)));
-  el('rows').replaceChildren(); el('chart').replaceChildren();
-  if (!usable.length) {
-    el('chart').textContent = 'No history in this period. Readings appear when the collector runs.';
-    ['low','high','samples'].forEach(id => el(id).textContent = '—'); return;
+  const model=TERChart.prepare(points,hours);
+  el('rows').replaceChildren();el('chart').replaceChildren();
+  el('samples').textContent=model.samples?model.samples.toLocaleString():'—';
+  for(const series of model.series)el(series.side+'-range').textContent=series.low===null?'—':money(series.low)+' / '+money(series.high);
+  if(!model.rows.length){el('chart').textContent='No stored readings in this period yet.';return;}
+  const ns='http://www.w3.org/2000/svg',width=Math.max(300,Math.min(900,el('chart').clientWidth)),plotWidth=width-82;
+  const svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox',`0 0 ${width} 260`);
+  const span=model.high-model.low||Math.max(model.high*.002,.01);
+  const x=p=>70+(Date.parse(p.bucket)-model.start)/(model.end-model.start)*plotWidth;
+  const y=value=>220-(Number(value)-model.low+span*.15)/(span*1.3)*185;
+  function shape(name,attrs){const item=document.createElementNS(ns,name);for(const [key,value]of Object.entries(attrs))item.setAttribute(key,String(value));return item;}
+  for(let i=0;i<4;i++){
+    const value=model.low+span*i/3,yy=y(value);
+    svg.append(shape('line',{x1:65,x2:width-12,y1:yy,y2:yy,stroke:'#eef0f6','stroke-dasharray':'4 5'}));
+    const label=shape('text',{x:0,y:yy+4,fill:'#8c95a6','font-size':11});label.textContent=value.toFixed(2);svg.append(label);
   }
-  const low = Math.min(...usable.map(p=>Number(p.low))), high = Math.max(...usable.map(p=>Number(p.high)));
-  el('low').textContent = money(low); el('high').textContent = money(high);
-  el('samples').textContent = usable.reduce((n,p)=>n+Number(p.samples),0).toLocaleString();
-  const ns = 'http://www.w3.org/2000/svg';
-  const width=Math.max(300,Math.min(900,el('chart').clientWidth)),plotWidth=width-82;
-  const svg = document.createElementNS(ns, 'svg'); svg.setAttribute('viewBox',`0 0 ${width} 260`);
-  const end = Date.now(), start = end - days * 86400000, span = high-low || Math.max(high*.002, .01);
-  const x = p => 70 + (Date.parse(p.bucket)-start)/(end-start)*plotWidth;
-  const y = p => 220 - (Number(p.price)-low+span*.15)/(span*1.3)*185;
-  for(let i=0;i<4;i++) {
-    const val=low+span*i/3, yy=220-(val-low+span*.15)/(span*1.3)*185;
-    const grid=document.createElementNS(ns,'line');grid.setAttribute('x1','65');grid.setAttribute('x2',width-12);grid.setAttribute('y1',yy);grid.setAttribute('y2',yy);grid.setAttribute('stroke','#eef0f6');grid.setAttribute('stroke-dasharray','4 5');svg.append(grid);
-    const label=document.createElementNS(ns,'text'); label.setAttribute('x','0');label.setAttribute('y',String(yy+4));label.setAttribute('fill','#8c95a6');label.setAttribute('font-size','12');label.textContent=val.toFixed(2);svg.append(label);
+  for(const series of model.series){
+    const color=series.side==='buy'?'#6554d9':'#1b8d77';
+    for(const segment of TERChart.segments(model.rows,series.side,model.step)){
+      const d=segment.map((p,i)=>`${i?'L':'M'} ${x(p)} ${y(p[series.side+'_price'])}`).join(' ');
+      const path=shape('path',{d,fill:'none',stroke:color,'stroke-width':2,'data-series':series.side,'stroke-linejoin':'round','stroke-linecap':'round'});
+      if(series.side==='sell')path.setAttribute('stroke-dasharray','6 4');svg.append(path);
+      for(const p of segment){
+        const dot=shape('circle',{cx:x(p),cy:y(p[series.side+'_price']),r:2,fill:color});
+        const title=shape('title',{});title.textContent=series.side+' '+money(p[series.side+'_price'])+' · '+new Date(p.bucket).toLocaleString();dot.append(title);svg.append(dot);
+      }
+    }
   }
-  let path = '', previous = null;
-  const gap = (days===1?5:days===7?30:120)*60000*1.5;
-  for(const p of usable) {
-    path += `${previous && Date.parse(p.bucket)-Date.parse(previous.bucket)<=gap?'L':'M'} ${x(p)} ${y(p)} `;
-    const dot=document.createElementNS(ns,'circle');dot.setAttribute('cx',x(p));dot.setAttribute('cy',y(p));dot.setAttribute('r','2');dot.setAttribute('fill',quoteSide==='buy'?'#6554d9':'#1b8d77');svg.append(dot);
-    previous=p;
+  for(const p of model.rows){
     const row=document.createElement('tr');
-    [new Date(p.bucket).toLocaleString(),money(p.price),String(p.samples)].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell);});el('rows').append(row);
+    [new Date(p.bucket).toLocaleString(),p.buy_price===null?'—':money(p.buy_price),p.sell_price===null?'—':money(p.sell_price),String(p.samples||0)].forEach(value=>{const cell=document.createElement('td');cell.textContent=value;row.append(cell);});el('rows').append(row);
   }
-  const line=document.createElementNS(ns,'path');line.setAttribute('d',path);line.setAttribute('fill','none');line.setAttribute('stroke',quoteSide==='buy'?'#6554d9':'#1b8d77');line.setAttribute('stroke-width','2');svg.append(line);
-  for(let i=0;i<4;i++){const tick=document.createElementNS(ns,'text');tick.setAttribute('x',70+i*plotWidth/3);tick.setAttribute('y','250');tick.setAttribute('fill','#8c95a6');tick.setAttribute('font-size','11');tick.setAttribute('text-anchor',i===3?'end':'start');const date=new Date(start+(end-start)*i/3);tick.textContent=days===1?date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):date.toLocaleDateString([],{month:'short',day:'numeric'});svg.append(tick);}
+  for(let i=0;i<4;i++){
+    const tick=shape('text',{x:70+i*plotWidth/3,y:250,fill:'#8c95a6','font-size':11,'text-anchor':i===3?'end':'start'});
+    tick.textContent=new Date(model.start+(model.end-model.start)*i/3).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});svg.append(tick);
+  }
   el('chart').append(svg);
 }
+
 function renderQuote(quote,fromCache,source='stored'){
   if(!quote){if(!latest){el('price').textContent='—';el('sell-price').textContent='—';el('spread').textContent='—';el('seen').textContent='Waiting for an observation';el('health').dataset.state='waiting';el('health').textContent='Waiting for collector';el('freshness').textContent='No prices have been recorded yet.';}return;}
   if(!TERQuoteSync.canDisplay(latest,quote))return;
@@ -80,17 +86,17 @@ function connectRealtime(){
   stopRealtime=TERRealtime.connect(config,quote=>{
     if(config.url!==project)return;
     renderQuote(quote,false);checkAlerts(latest);
-    if(historySnapshot){write('ter-prices:'+project+':'+quoteSide+':'+days,{latest,history:historySnapshot});}
+    if(historySnapshot){write('ter-prices:'+project+':window:'+hours,{latest,history:historySnapshot});}
   },()=>{});
 }
 
 async function refresh() {
   if(busy){pendingRefresh=true;return;}
   pendingRefresh=false;
-  const c={...config},version=generation,range=days,side=quoteSide;
+  const c={...config},version=generation,range=hours;
   if(!/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(c.url||'')){el('health').textContent='Setup needed';el('message').textContent='Save your Supabase project URL in Connection settings.';return;}
   busy=true;controller=new AbortController();const signal=controller.signal,timeout=setTimeout(()=>controller.abort(),15000);
-  const cacheKey='ter-prices:'+c.url+':'+side+':'+range;
+  const cacheKey='ter-prices:'+c.url+':window:'+range;
   const old=read(cacheKey);if(old&&!latest)render(old,true);
   let liveOK=false,storedOK=false,storageError=false;
   const isCurrent=()=>version===generation;
@@ -120,12 +126,16 @@ async function refresh() {
     if(!TERPublicConfig.valid(c)){if(isCurrent()){renderHistory([]);el('chart-note').textContent='Add your public Supabase key in Connection settings to load stored history.';}return;}
     if(historySnapshot&&Date.now()-historyLoadedAt<60000){renderHistory(historySnapshot);return;}
     try{
-      let points;
-      try{points=await api('rpc/price_history_side',{method:'POST',body:JSON.stringify({range_days:range,quote_side:side})});}
-      catch(error){if(side!=='buy')throw error;points=await api('rpc/price_history',{method:'POST',body:JSON.stringify({range_days:range})});}
+      let points,legacy=false;
+      try{points=await api('rpc/price_history_window',{method:'POST',body:JSON.stringify({window_hours:range})});}
+      catch{
+        const results=await Promise.allSettled(['buy','sell'].map(quote_side=>api('rpc/price_history_side',{method:'POST',body:JSON.stringify({range_days:1,quote_side})})));
+        if(results.every(r=>r.status==='rejected'))throw Error('History not configured');
+        points=TERChart.mergeLegacy(...results.map(r=>r.status==='fulfilled'?r.value:[]));legacy=true;
+      }
       if(!isCurrent())return;
       historySnapshot=points;historyLoadedAt=Date.now();renderHistory(points);
-      el('chart-note').textContent='Bucket averages · gaps indicate missing observations';
+      el('chart-note').textContent=legacy?'5-minute averages · run chart-windows.sql for finer 1h / 2h history.':'Buy and sell bucket averages · gaps indicate missing observations';
     }catch{if(isCurrent())el('chart-note').textContent='History unavailable. Live price cards update independently.';}
   })();
   try{
@@ -140,8 +150,7 @@ async function refresh() {
 }
 
 el('settings').onsubmit=e=>{e.preventDefault();const next={url:el('url').value.trim().replace(/\/$/,''),anonKey:el('key').value.trim()};try{validConfig(next);}catch(error){el('message').textContent=error.message;return;}config=next;write('ter-connection',next);generation++;controller?.abort();latest=null;historySnapshot=null;historyLoadedAt=0;render({latest:null,history:[]},false);connectRealtime();refresh();};
-document.querySelectorAll('[data-days]').forEach(button=>button.onclick=()=>{days=Number(button.dataset.days);historySnapshot=null;historyLoadedAt=0;el('chart-period').textContent=days===1?'Last 24 hours':'Last '+days+' days';generation++;controller?.abort();document.querySelectorAll('[data-days]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));renderHistory([]);refresh();});
-document.querySelectorAll('[data-side]').forEach(button=>button.onclick=()=>{quoteSide=button.dataset.side;historySnapshot=null;historyLoadedAt=0;generation++;controller?.abort();document.querySelectorAll('[data-side]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));el('table-price-label').textContent='Average '+quoteSide+' BTN';el('chart').setAttribute('aria-label',quoteSide+' price history chart');renderHistory([]);refresh();});
+document.querySelectorAll('[data-hours]').forEach(button=>button.onclick=()=>{hours=Number(button.dataset.hours);historySnapshot=null;historyLoadedAt=0;el('chart-period').textContent='Last '+hours+(hours===1?' hour':' hours');generation++;controller?.abort();document.querySelectorAll('[data-hours]').forEach(b=>b.setAttribute('aria-pressed',String(b===button)));renderHistory([]);refresh();});
 el('url').value=config?.url||'';el('key').value=config?.anonKey||'';el('refresh').onclick=refresh;
 let installPrompt;window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installPrompt=e;el('install').hidden=false;});el('install').onclick=async()=>{await installPrompt?.prompt();installPrompt=null;el('install').hidden=true;};
 window.addEventListener('online',()=>{connectRealtime();refresh();});window.addEventListener('offline',health);document.addEventListener('visibilitychange',()=>{if(!document.hidden){connectRealtime();refresh();}else{stopRealtime?.();stopRealtime=null;}});
