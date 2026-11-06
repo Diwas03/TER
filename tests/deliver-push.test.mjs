@@ -20,5 +20,20 @@ test('native transport does not follow redirects; provider failures have safe sp
 });
 test('mismatched VAPID keys fail before provider access',async()=>{
  const a=setup(),b=setup();let sent=false;
- await assert.rejects(deliverPush(a.subscription,'payload',{...a.options,privateKey:b.options.privateKey,fetch:async()=>{sent=true;return {ok:true};}}),e=>e.code==='push_configuration_invalid');assert.equal(sent,false);
+ await assert.rejects(deliverPush(a.subscription,'payload',{...a.options,privateKey:b.options.privateKey,fetch:async()=>{sent=true;return {ok:true};}}),e=>e.code==='push_vapid_pair_mismatch');assert.equal(sent,false);
+});
+
+test('existing padded/quoted key encodings and short private scalars normalize without rotation',async()=>{
+ const fixture=setup(),vapid=createECDH('prime256v1');vapid.setPrivateKey(Buffer.from([1]));
+ const pub=vapid.getPublicKey().toString('base64url');
+ const request=await makePushRequest(fixture.subscription,'compatibility-check',{publicKey:' "'+pub+'=" ',privateKey:' AQ== '});
+ assert.ok(request.headers.Authorization.endsWith('k='+pub));
+});
+test('invalid server and subscription keys are distinguished safely',async()=>{
+ const fixture=setup();
+ for(const [subscription,options,code]of [
+  [fixture.subscription,{...fixture.options,publicKey:'invalid'},'push_vapid_public_invalid'],
+  [fixture.subscription,{...fixture.options,privateKey:'not a key'},'push_vapid_private_invalid'],
+  [{...fixture.subscription,keys:{p256dh:'invalid',auth:'invalid'}},fixture.options,'push_subscription_key_invalid']
+ ])await assert.rejects(deliverPush(subscription,'payload',options),e=>e.code===code);
 });

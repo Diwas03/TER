@@ -30,7 +30,7 @@ export async function handleTestPush(request, options) {
     return reply(202);
   } catch (error) {
     const code = error?.statusCode;
-    const safeCodes=['push_configuration_invalid','push_endpoint_invalid','push_network_error','push_subscription_expired','push_provider_auth_rejected','push_rate_limited','push_provider_unavailable'];
+    const safeCodes=['push_subscription_key_invalid','push_vapid_public_invalid','push_vapid_private_invalid','push_vapid_pair_mismatch','push_runtime_crypto_error','push_configuration_invalid','push_endpoint_invalid','push_network_error','push_subscription_expired','push_provider_auth_rejected','push_rate_limited','push_provider_unavailable'];
     const reason=safeCodes.includes(error?.code)?error.code:stage==='storage'?'push_storage_unavailable':stage==='authentication'?'push_auth_network_error':'push_delivery_failed';
     console.error('Test push failed',reason,code||'no-status');
     return reply(code === 404 || code === 410 ? 410 : 502,reason);

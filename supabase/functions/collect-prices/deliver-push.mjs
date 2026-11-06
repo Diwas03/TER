@@ -6,7 +6,11 @@ export async function deliverPush(subscription,payload,options){
  try{
   // Native Web Crypto avoids unsupported Node crypto/HTTPS paths in Edge runtimes.
   details=await (options.generateRequestDetails||makePushRequest)(subscription,payload,options);
- }catch{throw Object.assign(Error('Push key or subscription configuration invalid'),{code:'push_configuration_invalid'});}
+ }catch(error){
+  const known=['push_subscription_key_invalid','push_vapid_public_invalid','push_vapid_private_invalid','push_vapid_pair_mismatch','push_runtime_crypto_error'];
+  if(known.includes(error?.code))throw error;
+  throw Object.assign(Error('Push encryption failed in runtime'),{code:'push_runtime_crypto_error'});
+ }
  if(!supportedEndpoint(details.endpoint))throw Object.assign(Error('Unsupported push endpoint'),{code:'push_endpoint_invalid'});
  let response;
  try{response=await (options.fetch||fetch)(details.endpoint,{method:details.method||'POST',headers:details.headers,body:details.body,redirect:'error',signal:AbortSignal.timeout(10000)});}

@@ -52,3 +52,11 @@ Successful browser registration does not verify the server can encrypt/sign/send
 After both workflows deploy the new main commit, reopen the app and use **Send test notification**. No new SQL or key rotation is needed. On failure the UI and logs now distinguish invalid key/subscription configuration, provider authentication rejection, expired subscription, provider rate limit, network failure, subscription-storage failure and Auth connectivity. Only safe codes/statuses are returned; keys, endpoints, remote bodies and authorization headers are omitted.
 
 A native transport change is not evidence of hosted delivery: require a notification on the real phone. If push keys do not match the registered application server key, restore the correct key pair or deliberately rotate/re-register affected devices after diagnosis. Do not delete working VAPID keys merely to retry a network failure.
+
+## Key-specific diagnostics
+
+The sender accepts surrounding whitespace/quotes, URL-safe or standard base64 padding, and restores leading zero bytes in short P-256 private scalars. The normalized private key must still verify against the existing public key. This changes encoding only and does not rotate keys or bypass signature validation. New key generation always emits a 32-byte private scalar.
+
+Test failures distinguish `push_vapid_public_invalid`, `push_vapid_private_invalid`, `push_vapid_pair_mismatch`, `push_subscription_key_invalid` and `push_runtime_crypto_error`. Subscription-key errors require disabling/re-enabling the phone subscription. Server key errors require restoring the matching server key material; they are not fixed by Android permissions or the Supabase public project key. Never share private keys in chat.
+
+The native request generator was also exercised in a local Deno runtime, in addition to Node Web Crypto and independent payload/signature checks. This does not inspect deployed secrets or prove delivery from the hosted project. After both workflows succeed, reopen the app and retry the test; report only the new error text if it still fails.
