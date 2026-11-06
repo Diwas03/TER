@@ -42,6 +42,9 @@
    const c=settings();if(!TERPublicConfig.valid(c))throw Error('Save your Supabase connection first.');
    const session=await auth(c);
    const response=await fetch(c.url+'/functions/v1/collect-prices/test-push',{method:'POST',headers:{apikey:c.anonKey,Authorization:'Bearer '+session.access_token,'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(35000)});
+   let result;try{result=await response.json();}catch{}
+   const reasons={push_auth_network_error:'The function could not reach Supabase Auth to validate this device. Retry once and check server logs.',push_delivery_failed:'Push delivery failed before the provider returned a status. Check the updated collect-prices logs.',push_configuration_invalid:'Push keys or subscription encryption keys are invalid. Check server VAPID keys; do not rotate working keys blindly.',push_provider_auth_rejected:'The push provider rejected the VAPID credentials. Re-enable phone push with the deployed public key and check the server key pair.',push_network_error:'The Supabase function could not reach the phone push provider. Retry once, then check collect-prices logs.',push_storage_unavailable:'The server could not read your push subscription. Check the push_alerts table and server database configuration.',push_rate_limited:'The push provider is rate-limiting delivery. Wait before trying again.',push_provider_unavailable:'The push provider is unavailable. Retry later.'};
+   if(response.status!==202&&reasons[result?.error])throw Error(reasons[result.error]);
    if(response.status===202)status('Test submitted to the push service. Check this phone’s notifications; acceptance does not confirm display.');
    else if(response.status===404)throw Error('No saved subscription. Enable phone push first, and deploy the latest collector if this endpoint is missing.');
    else if(response.status===410)throw Error('This subscription has expired. Disable phone push, then enable it again.');

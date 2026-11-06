@@ -26,3 +26,8 @@ test('missing subscription and untrusted endpoints do not send',async()=>{
   assert.equal(r.status,status);assert.equal(sent,false);
  }
 });
+
+test('provider failures return only safe diagnosis codes, never remote bodies or secrets',async()=>{
+ const r=await handleTestPush(request(),{...options,fetch:async url=>({ok:true,json:async()=>url.endsWith('/auth/v1/user')?{id:user}:[{subscription:{endpoint:'https://fcm.googleapis.com/test'}}]}),send:async()=>{throw Object.assign(Error('private authorization value'),{code:'push_provider_auth_rejected',statusCode:403});}});
+ assert.equal(r.status,502);const payload=await r.json();assert.equal(payload.error,'push_provider_auth_rejected');assert.ok(!JSON.stringify(payload).includes('private authorization'));
+});

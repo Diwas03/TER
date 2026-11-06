@@ -44,3 +44,11 @@ After both new Pages and collector workflows succeed:
 4. If sign-in still fails, share only the new message/HTTP status, never tokens. CAPTCHA requirements need a compatible CAPTCHA flow and cannot be solved by repeatedly retrying. Invalid refresh sessions require identity repair; do not clear app data blindly because an old remote subscription may remain.
 
 No new SQL is required if push-alerts.sql has already been applied. Hosted Auth configuration and actual handset delivery require verification after deployment. The tests use controlled responses and do not enable Anonymous Sign-Ins remotely.
+
+## Server-side 502 after successful registration
+
+Successful browser registration does not verify the server can encrypt/sign/send a push. The sender now uses native Web Crypto for RFC 8291 aes128gcm payload encryption and RFC 8292 ES256 VAPID signing, then native fetch for HTTPS transport. It has no Node crypto/HTTPS runtime dependency. Existing VAPID keys and subscriptions are retained. Payload encryption has been checked against the independent http_ece decoder; signatures have been verified separately.
+
+After both workflows deploy the new main commit, reopen the app and use **Send test notification**. No new SQL or key rotation is needed. On failure the UI and logs now distinguish invalid key/subscription configuration, provider authentication rejection, expired subscription, provider rate limit, network failure, subscription-storage failure and Auth connectivity. Only safe codes/statuses are returned; keys, endpoints, remote bodies and authorization headers are omitted.
+
+A native transport change is not evidence of hosted delivery: require a notification on the real phone. If push keys do not match the registered application server key, restore the correct key pair or deliberately rotate/re-register affected devices after diagnosis. Do not delete working VAPID keys merely to retry a network failure.

@@ -38,7 +38,7 @@ Deno.serve(async (request: Request) => {
       body: JSON.stringify(quote), signal: AbortSignal.timeout(10000)
     });
     if (saved.status !== 201) throw new Error('History write failed');
-    try { await sendPriceAlerts(quote); } catch { console.error('Push processing failed; quote saved'); }
+    try { await sendPriceAlerts(quote); } catch (error) { console.error('Push processing failed; quote saved', (error as {code?: string}).code || 'push_processing_error', (error as {statusCode?: number}).statusCode || 'no-status'); }
     return Response.json({ok: true, ...quote});
   } catch {
     // Remote bodies/headers can contain sensitive details; never return them.
