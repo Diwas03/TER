@@ -1,4 +1,5 @@
 import webpush from 'npm:web-push@3.6.7';
+import { handleTestPush } from './test-push.mjs';
 
 import { supportedEndpoint } from './push-rules.mjs';
 
@@ -45,4 +46,15 @@ export async function sendPriceAlerts(quote: {price: string; sell_price: string;
     if (rows.length < 100) break;
     after = rows[rows.length - 1].user_id;
   }
+}
+
+export async function testPricePush(request: Request) {
+  const publicKey = Deno.env.get('VAPID_PUBLIC_KEY'), privateKey = Deno.env.get('VAPID_PRIVATE_KEY');
+  return handleTestPush(request, {
+    url: Deno.env.get('SUPABASE_URL'), key: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'), publicKey, privateKey,
+    send: async (subscription: object, payload: string) => {
+      webpush.setVapidDetails('https://diwas03.github.io/TER/', publicKey!, privateKey!);
+      await webpush.sendNotification(subscription, payload, {TTL: 90, timeout: 10000});
+    }
+  });
 }

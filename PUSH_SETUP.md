@@ -29,3 +29,18 @@ On iPhone/iPad use an updated iOS version supporting Web Push (16.4+) and instal
 After deployment, require new rows with `sell_price` populated, then set an intentional test target that matches the current quote (e.g. buy target slightly above buy) and check a real phone notification. This triggers a real notification. Restore your intended targets afterward. Verify both directions/rearming if relying on them. A missing push table or malformed keys does not stop quote storage; collector logs report push failures separately.
 
 Local tests cover price scaling, invalid bid/ask and stale quotes, target direction/equality, rearming, missing prices and duplicate suppression. Browser tests use mocked Supabase data. Supabase migrations, RLS, Deno deployment and actual device push must still be validated in the hosted project. Large subscriber counts can exceed function execution quotas; this version processes subscribers sequentially in pages, appropriate for a small personal dashboard.
+
+## Android: push sign-in error and test delivery
+
+If registration says it cannot authenticate, open Supabase **Authentication → Sign In / Providers → Anonymous Sign-Ins**, enable it and save. New user sign-ups must also be allowed. This is a project setting; running SQL or deploying the function does not enable it. No TER login or password is involved.
+
+The PWA now distinguishes disabled anonymous sign-in, disabled sign-ups, CAPTCHA requirements, invalid public project keys, rate limits and failed session refresh. It refreshes existing private identities rather than silently creating duplicate subscriptions, and serializes refreshes across tabs where browser Web Locks is supported. It authenticates before subscribing so a failed sign-in does not leave a new unregistered push subscription.
+
+After both new Pages and collector workflows succeed:
+
+1. Close/reopen the Android PWA and tap **Enable phone push**. Require registration confirmation.
+2. Tap **Send test notification**. The backend validates your user session and sends only to that user's saved subscription; it never trusts a request-supplied user ID or endpoint. The test does not change price targets or alert rearming state.
+3. If “Test submitted” appears, look for the notification in Android's notification shade. Provider acceptance is not proof Android displayed it. Check Chrome/PWA notification permission, Android app/site notifications and Do Not Disturb if it is absent.
+4. If sign-in still fails, share only the new message/HTTP status, never tokens. CAPTCHA requirements need a compatible CAPTCHA flow and cannot be solved by repeatedly retrying. Invalid refresh sessions require identity repair; do not clear app data blindly because an old remote subscription may remain.
+
+No new SQL is required if push-alerts.sql has already been applied. Hosted Auth configuration and actual handset delivery require verification after deployment. The tests use controlled responses and do not enable Anonymous Sign-Ins remotely.

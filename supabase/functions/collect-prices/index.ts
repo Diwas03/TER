@@ -1,7 +1,12 @@
 import { fetchQuote } from './fetch-quote.mjs';
-import { sendPriceAlerts } from './push.ts';
+import { sendPriceAlerts, testPricePush } from './push.ts';
 
 Deno.serve(async (request: Request) => {
+  if (new URL(request.url).pathname.endsWith('/test-push')) {
+    if (request.method === 'OPTIONS') return new Response(null, {status: 204, headers: {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type'}});
+    if (request.method !== 'POST') return new Response('Method not allowed', {status: 405});
+    return testPricePush(request);
+  }
   if (request.method === 'GET' && new URL(request.url).pathname.endsWith('/quote')) {
     const headers = {'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store, max-age=0'};
     try {
